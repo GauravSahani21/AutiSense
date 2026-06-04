@@ -9,7 +9,7 @@ if (!process.env.GEMINI_API_KEY) {
 // Initialize Genkit
 export const ai = genkit({
   plugins: [googleAI()],
-  model: gemini15Flash,
+  model: 'googleai/gemini-flash-latest',
 });
 
 // Define the input schema for the analysis flow

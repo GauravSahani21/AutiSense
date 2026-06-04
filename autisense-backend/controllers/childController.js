@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Child from '../models/Child.js';
 import Screening from '../models/Screening.js';
 
@@ -46,9 +47,17 @@ export const getChild = async (req, res, next) => {
 // @access  Private (parent)
 export const createChild = async (req, res, next) => {
   try {
-    req.body.parentId = req.user._id;
+    const { name, dob, gender, guardian, medicalNotes, avatar } = req.body;
 
-    const child = await Child.create(req.body);
+    const child = await Child.create({
+      parentId: req.user._id,
+      name,
+      dob,
+      gender,
+      guardian,
+      medicalNotes,
+      avatar,
+    });
 
     res.status(201).json({
       success: true,
@@ -123,12 +132,41 @@ export const getChildScreenings = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Child not found' });
     }
 
-    const screenings = await Screening.find({ childId }).sort({ screeningDate: -1 });
+    const [mchatScreenings, visualScans] = await Promise.all([
+      Screening.find({ childId }).lean(),
+      mongoose.model('VisualScan').find({ childId }).lean()
+    ]);
+
+    const normalizedMchat = mchatScreenings.map(s => ({
+      _id: s._id,
+      childId: s.childId,
+      parentId: s.parentId,
+      score: s.score,
+      riskLevel: s.riskLevel,
+      screeningDate: s.screeningDate || s.createdAt,
+      status: s.status,
+      type: 'M-CHAT'
+    }));
+
+    const normalizedVisual = visualScans.map(s => ({
+      _id: s._id,
+      childId: s.childId,
+      parentId: s.userId,
+      score: Math.round((s.combinedReport?.overallScore || 0) / 5),
+      riskLevel: s.combinedReport?.overallRisk || 'Low',
+      screeningDate: s.completedAt || s.createdAt,
+      status: 'completed',
+      type: 'AI Visual'
+    }));
+
+    const allScreenings = [...normalizedMchat, ...normalizedVisual].sort(
+      (a, b) => new Date(b.screeningDate) - new Date(a.screeningDate)
+    );
 
     res.status(200).json({
       success: true,
-      count: screenings.length,
-      data: screenings
+      count: allScreenings.length,
+      data: allScreenings
     });
   } catch (err) {
     next(err);

@@ -102,8 +102,8 @@ export default function AwarenessPage() {
               marginBottom: 40
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--muted)', letterSpacing: '0.05em' }}>SIGNS DETECTED</span>
-                <span style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--orange-solid)' }}>{checkedItems.size} <span style={{ color: 'var(--muted)', fontSize: '1rem' }}>/ 8</span></span>
+                <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--muted)', letterSpacing: '0.05em' }}>AUTISM PROBABILITY INDICATOR</span>
+                <span style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--orange-solid)' }}>{Math.round((checkedItems.size / 8) * 100)}%</span>
               </div>
               <div style={{ height: 10, background: 'var(--orange-pale)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border-light)' }}>
                 <div style={{ width: `${(checkedItems.size / 8) * 100}%`, height: '100%', background: 'var(--orange)', transition: 'width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)' }} />
@@ -113,7 +113,7 @@ export default function AwarenessPage() {
             {checkedItems.size >= 4 && (
               <div className="animate-fadeIn" style={{ background: 'var(--red-pale)', color: '#991B1B', padding: '20px 24px', borderRadius: 'var(--radius-md)', fontSize: '1rem', fontWeight: 700, marginBottom: 40, border: '1.5px solid rgba(239,68,68,0.2)', display: 'flex', gap: 16, alignItems: 'center' }}>
                 <CheckCircle2 size={28} style={{ flexShrink: 0 }} />
-                <span>You've noted {checkedItems.size} signs. We strongly suggest completing our full AI screening or consulting a specialist.</span>
+                <span>You have an estimated {Math.round((checkedItems.size / 8) * 100)}% possibility based on these indicators. We strongly suggest completing our full AI screening or consulting a specialist.</span>
               </div>
             )}
             

@@ -32,7 +32,7 @@ export default function Navbar() {
   const isActive = (path) =>
     path === '/' ? pathname === '/' : pathname.startsWith(path);
 
-  const handleLogout = () => { logout(); navigate('/'); };
+  const handleLogout = async () => { await logout(); navigate('/'); };
 
   /* ── link style helper ── */
   const linkStyle = (path) => ({
@@ -116,19 +116,10 @@ export default function Navbar() {
         <button style={s(dash)} onClick={() => go(dash)}>
           Dashboard
         </button>
-        {!mobile && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <RoleBadge role={user?.role} />
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--mid)' }}>
-              {user?.name}
-            </span>
-          </div>
-        )}
-        {mobile && (
-          <div style={{ padding: '8px 16px', fontSize: '0.82rem', color: 'var(--mid)', fontWeight: 600 }}>
-            👤 {user?.name} · <RoleBadge role={user?.role} />
-          </div>
-        )}
+        <button style={s('/profile')} onClick={() => go(user ? '/profile' : '/login')}>
+          👤 {user ? user.name : 'Profile'}
+          {user && <RoleBadge role={user.role} />}
+        </button>
         <button
           onClick={handleLogout}
           style={{

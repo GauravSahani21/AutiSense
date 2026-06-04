@@ -142,13 +142,15 @@ print_header "6. AI Scan Routes (/api/scan)"
 # Analyze Face/Eye Metrics
 FACE=$(curl -s -X POST "$BASE/api/scan/analyze-face-eye" \
   -H "Content-Type: application/json" \
-  -d '{"eyeContactScore":72,"expressionScore":68,"blinkRate":18,"headMovement":85,"duration":30}')
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"video":"AAAA","mimeType":"video/webm"}')
 check "POST /api/scan/analyze-face-eye" "$FACE" '"success":true'
 
 # Analyze Drawing (using a small test base64 pixel — 1x1 red PNG)
 TINY_PNG="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg=="
 DRAWING=$(curl -s -X POST "$BASE/api/scan/analyze-drawing" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d "{\"image\":\"$TINY_PNG\"}")
 check "POST /api/scan/analyze-drawing" "$DRAWING" '"success":true'
 
@@ -159,7 +161,7 @@ DRAWING_RESULT=$(echo "$DRAWING" | python3 -c "import sys,json; d=json.load(sys.
 COMBINED=$(curl -s -X POST "$BASE/api/scan/combined-report" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d "{\"drawingResult\":$DRAWING_RESULT,\"faceResult\":$FACE_RESULT,\"childName\":\"HealthCheck Child\"}")
+  -d "{\"drawingResult\":$DRAWING_RESULT,\"faceResult\":$FACE_RESULT,\"behavioralResult\":{\"riskLevel\":\"Low\",\"reasoning\":\"typical\",\"score\":20},\"childName\":\"HealthCheck Child\"}")
 check "POST /api/scan/combined-report" "$COMBINED" '"success":true'
 
 # ─── SECTION 7: Doctor Routes ───────────────────────────────────────────────

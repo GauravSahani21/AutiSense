@@ -1,34 +1,38 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { PageWrapper, Card, Badge, Btn, BackBtn } from '../components/UI';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { PageWrapper, Card, Badge, Btn, BackBtn, Input, useToast } from '../components/UI';
 import { children as childrenApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export default function ChildDetailPage() {
   const { childId } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const location = useLocation();
+  const { isAuthenticated, user } = useAuth();
+  const { showToast, ToastComponent } = useToast();
+  const isEditMode = location.pathname.endsWith('/edit');
 
-  const [tab, setTab] = useState('overview'); // overview | history | details
+  const [tab, setTab] = useState(location.state?.tab || (isEditMode ? 'details' : 'overview'));
   const [child, setChild] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', dob: '', gender: 'male', guardian: '' });
 
   useEffect(() => {
     const fetchChildDetails = async () => {
-      if (!token || !childId) return;
+      if (!isAuthenticated || !childId) return;
 
       setLoading(true);
       setError('');
-      // Clear old data first so previous child does not flash.
       setChild(null);
       setHistory([]);
 
       try {
         const [childRes, screeningsRes] = await Promise.all([
-          childrenApi.getOne(childId, token),
-          childrenApi.getScreenings(childId, token),
+          childrenApi.getOne(childId),
+          childrenApi.getScreenings(childId),
         ]);
 
         const fetchedChild = childRes?.data || null;
@@ -38,6 +42,18 @@ export default function ChildDetailPage() {
 
         setChild(fetchedChild);
         setHistory(fetchedHistory);
+
+        if (fetchedChild) {
+          const dobStr = fetchedChild.dob
+            ? new Date(fetchedChild.dob).toISOString().slice(0, 10)
+            : '';
+          setForm({
+            name: fetchedChild.name || '',
+            dob: dobStr,
+            gender: fetchedChild.gender || 'male',
+            guardian: fetchedChild.guardian || '',
+          });
+        }
       } catch (err) {
         setError(err?.message || 'Failed to fetch child details');
       } finally {
@@ -46,16 +62,33 @@ export default function ChildDetailPage() {
     };
 
     fetchChildDetails();
-  }, [childId, token]);
+  }, [childId, isAuthenticated]);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.dob || !form.guardian.trim()) {
+      showToast('Please fill in all required fields.', 'error');
+      return;
+    }
+    try {
+      setSaving(true);
+      const res = await childrenApi.update(childId, form);
+      setChild(res.data);
+      showToast('Child profile updated.', 'success');
+      navigate(`/parent/child/${childId}/details`);
+    } catch (err) {
+      showToast(err?.message || 'Failed to update child', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
       <PageWrapper style={{ padding: '40px 24px' }}>
         <div className="container" style={{ maxWidth: 860 }}>
           <BackBtn onClick={() => navigate('/parent')} label="Back to Dashboard" />
-          <Card style={{ padding: 28, textAlign: 'center' }}>
-            Loading child details...
-          </Card>
+          <Card style={{ padding: 28, textAlign: 'center' }}>Loading child details...</Card>
         </div>
       </PageWrapper>
     );
@@ -77,14 +110,44 @@ export default function ChildDetailPage() {
   const computedAge = child.age ?? (child.dob ? new Date().getFullYear() - new Date(child.dob).getFullYear() : '--');
   const displayGender = child.gender ? child.gender.charAt(0).toUpperCase() + child.gender.slice(1) : '--';
 
+  if (isEditMode) {
+    return (
+      <PageWrapper style={{ padding: '40px 24px' }}>
+        {ToastComponent}
+        <div className="container" style={{ maxWidth: 560 }}>
+          <BackBtn onClick={() => navigate(`/parent/child/${childId}/details`)} label="Cancel" />
+          <Card style={{ padding: 32, marginTop: 16 }}>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.4rem', marginBottom: 24 }}>
+              Edit Child Profile
+            </h2>
+            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Input label="Full Name" name="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <Input label="Date of Birth" type="date" name="dob" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} required />
+              <div className="form-group">
+                <label className="form-label">Gender</label>
+                <select className="form-select" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+              <Input label="Guardian Name" name="guardian" value={form.guardian} onChange={(e) => setForm({ ...form, guardian: e.target.value })} required />
+              <Btn type="submit" size="lg" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</Btn>
+            </form>
+          </Card>
+        </div>
+      </PageWrapper>
+    );
+  }
+
   return (
     <PageWrapper style={{ padding: '40px 24px' }}>
+      {ToastComponent}
       <div className="container" style={{ maxWidth: 860 }}>
         <BackBtn onClick={() => navigate('/parent')} label="Back to Dashboard" />
 
         <Card className="animate-fadeInUp" style={{ padding: 32, marginBottom: 28, display: 'flex', gap: 24, alignItems: 'center' }}>
           <div style={{ width: 88, height: 88, borderRadius: '50%', background: 'var(--orange-pale)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem' }}>
-            {child.avatar || '👶'}
+            {(!child.avatar || child.avatar === 'default-avatar') ? '👶' : child.avatar}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -133,7 +196,7 @@ export default function ChildDetailPage() {
                     <div style={{ fontSize: '0.88rem', color: 'var(--muted)' }}>No screenings yet.</div>
                   )}
                 </Card>
-                <Btn size="lg" onClick={() => navigate(`/screening/${child._id}`)}>Start New Screening</Btn>
+                <Btn size="lg" onClick={() => navigate(`/visual-screening?childId=${child._id}`)}>Start AI Assessment</Btn>
               </div>
             </div>
           )}

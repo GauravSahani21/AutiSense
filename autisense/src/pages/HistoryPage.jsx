@@ -1,22 +1,70 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageWrapper, Card, Badge, Btn, Select, BackBtn } from '../components/UI';
-import { SCREENING_HISTORY, CHILDREN } from '../data/dummyData';
+import { children as childrenApi, screenings as screeningsApi } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 export default function HistoryPage() {
   const navigate = useNavigate();
-  
+  const [searchParams] = useSearchParams();
+  const { isAuthenticated, user } = useAuth();
+  const childIdParam = searchParams.get('childId');
+
+  const [children, setChildren] = useState([]);
+  const [screenings, setScreenings] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filterChild, setFilterChild] = useState('All');
   const [filterRisk, setFilterRisk] = useState('All');
   const [sortDate, setSortDate] = useState('Newest');
 
-  // Since we only want to show history for the logged in parent's children
-  // we filter SCREENING_HISTORY by CHILDREN ids.
-  const baseHistory = SCREENING_HISTORY.filter(h => CHILDREN.find(c => c.id === h.childId));
+  useEffect(() => {
+    const load = async () => {
+      if (!isAuthenticated) return;
+      try {
+        const [childrenRes, screeningsRes] = await Promise.all([
+          childrenApi.getAll(),
+          screeningsApi.getAll(),
+        ]);
+        const kids = childrenRes.data || [];
+        setChildren(kids);
+        setScreenings(screeningsRes.data || []);
 
-  const filtered = baseHistory
-    .filter(h => filterChild === 'All' || h.child === filterChild)
-    .filter(h => filterRisk === 'All' || h.risk === filterRisk)
+        if (childIdParam) {
+          const match = kids.find((c) => c._id === childIdParam);
+          if (match) setFilterChild(match.name);
+        }
+      } catch (err) {
+        console.error('Failed to load screening history:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [isAuthenticated, childIdParam]);
+
+  const historyRows = useMemo(
+    () =>
+      screenings.map((row) => ({
+        _id: row._id,
+        childId: row.childId?._id || row.childId,
+        child: row.childId?.name || 'Unknown Child',
+        date: row.screeningDate || row.createdAt,
+        score: row.score ?? 0,
+        total: 20,
+        risk: row.riskLevel || 'Low',
+        status:
+          row.status === 'reviewed'
+            ? 'Reviewed'
+            : row.status === 'pending'
+            ? 'Pending'
+            : 'Completed',
+      })),
+    [screenings]
+  );
+
+  const filtered = historyRows
+    .filter((h) => filterChild === 'All' || h.child === filterChild)
+    .filter((h) => filterRisk === 'All' || h.risk === filterRisk)
     .sort((a, b) => {
       if (sortDate === 'Newest') return new Date(b.date) - new Date(a.date);
       return new Date(a.date) - new Date(b.date);
@@ -24,18 +72,30 @@ export default function HistoryPage() {
 
   const counts = {
     total: filtered.length,
-    low: filtered.filter(h => h.risk === 'Low').length,
-    medium: filtered.filter(h => h.risk === 'Medium').length,
-    high: filtered.filter(h => h.risk === 'High').length,
+    low: filtered.filter((h) => h.risk === 'Low').length,
+    medium: filtered.filter((h) => h.risk === 'Medium').length,
+    high: filtered.filter((h) => h.risk === 'High').length,
   };
+
+  if (loading) {
+    return (
+      <PageWrapper style={{ padding: '40px 24px' }}>
+        <div className="container">
+          <BackBtn onClick={() => navigate('/parent')} />
+          <p style={{ marginTop: 24 }}>Loading screening history…</p>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper style={{ padding: '40px 24px' }}>
       <div className="container">
         <BackBtn onClick={() => navigate('/parent')} />
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', marginBottom: 24 }}>Screening History</h1>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', marginBottom: 24 }}>
+          Screening History
+        </h1>
 
-        {/* Summary Cards */}
         <div className="grid-4" style={{ marginBottom: 32 }}>
           <Card style={{ padding: 20, textAlign: 'center', background: 'var(--cream)' }}>
             <div style={{ fontSize: '2rem', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>{counts.total}</div>
@@ -55,16 +115,17 @@ export default function HistoryPage() {
           </Card>
         </div>
 
-        {/* Filters */}
         <Card style={{ padding: '20px 24px', marginBottom: 24, display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <Select label="Filter by Child" value={filterChild} onChange={e => setFilterChild(e.target.value)} style={{ marginBottom: 0 }}>
+            <Select label="Filter by Child" value={filterChild} onChange={(e) => setFilterChild(e.target.value)} style={{ marginBottom: 0 }}>
               <option value="All">All Children</option>
-              {CHILDREN.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              {children.map((c) => (
+                <option key={c._id} value={c.name}>{c.name}</option>
+              ))}
             </Select>
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <Select label="Filter by Risk" value={filterRisk} onChange={e => setFilterRisk(e.target.value)} style={{ marginBottom: 0 }}>
+            <Select label="Filter by Risk" value={filterRisk} onChange={(e) => setFilterRisk(e.target.value)} style={{ marginBottom: 0 }}>
               <option value="All">All Risks</option>
               <option value="Low">Low Risk</option>
               <option value="Medium">Medium Risk</option>
@@ -72,14 +133,13 @@ export default function HistoryPage() {
             </Select>
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <Select label="Sort by Date" value={sortDate} onChange={e => setSortDate(e.target.value)} style={{ marginBottom: 0 }}>
+            <Select label="Sort by Date" value={sortDate} onChange={(e) => setSortDate(e.target.value)} style={{ marginBottom: 0 }}>
               <option value="Newest">Newest First</option>
               <option value="Oldest">Oldest First</option>
             </Select>
           </div>
         </Card>
 
-        {/* Table */}
         <Card className="table-wrap animate-fadeInUp">
           <table>
             <thead>
@@ -93,15 +153,23 @@ export default function HistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row, i) => (
-                <tr key={row.id}>
+              {filtered.map((row) => (
+                <tr key={row._id}>
                   <td style={{ fontWeight: 600 }}>{new Date(row.date).toLocaleDateString()}</td>
                   <td>{row.child}</td>
                   <td>{row.score} / {row.total}</td>
                   <td><Badge risk={row.risk} /></td>
                   <td><span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600 }}>{row.status}</span></td>
                   <td style={{ textAlign: 'right' }}>
-                    <Btn size="sm" variant="ghost" onClick={() => navigate('/result')}>View Report</Btn>
+                    <Btn
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        navigate(`/parent/child/${row.childId}/details`, { state: { tab: 'history' } })
+                      }
+                    >
+                      View Details
+                    </Btn>
                   </td>
                 </tr>
               ))}
@@ -109,8 +177,8 @@ export default function HistoryPage() {
                 <tr>
                   <td colSpan="6" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
                     <div style={{ fontSize: '2rem', marginBottom: 10 }}>🔍</div>
-                    <div style={{ fontWeight: 600 }}>No results found</div>
-                    <div style={{ fontSize: '0.85rem' }}>Try adjusting your filters</div>
+                    <div style={{ fontWeight: 600 }}>No screenings yet</div>
+                    <div style={{ fontSize: '0.85rem' }}>Complete a screening or adjust your filters</div>
                   </td>
                 </tr>
               )}

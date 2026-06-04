@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Card, Btn, Input, useToast, Container, GlassCard } from '../components/UI';
+import { Btn, Input, useToast, Container } from '../components/UI';
 
 export default function LoginPage() {
-  const [tab, setTab] = useState('login'); // 'login' | 'register'
-  const { login, register, dashboardPath } = useAuth();
+  const [tab, setTab] = useState('login');
+  const { login, register, dashboardPath, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast, ToastComponent } = useToast();
 
+  React.useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate(dashboardPath(user));
+    }
+  }, [isAuthenticated, user, navigate, dashboardPath]);
+
   const [formData, setFormData] = useState({
-    name: '', email: '', password: '', confirmPassword: '', role: 'parent'
+    name: '', email: '', password: '', confirmPassword: ''
   });
   const [errors, setErrors] = useState({});
-
   const from = location.state?.from?.pathname || null;
 
   const handleTab = (t) => {
     setTab(t);
     setErrors({});
-    setFormData({ name: '', email: '', password: '', confirmPassword: '', role: 'parent' });
+    setFormData({ name: '', email: '', password: '', confirmPassword: '' });
   };
 
   const handleChange = (e) => {
@@ -35,7 +40,7 @@ export default function LoginPage() {
     let newErrs = {};
     if (!formData.email) newErrs.email = 'Email is required';
     if (!formData.password) newErrs.password = 'Password is required';
-    
+
     if (tab === 'register') {
       if (!formData.name) newErrs.name = 'Full Name is required';
       if (!formData.confirmPassword) newErrs.confirmPassword = 'Required';
@@ -52,7 +57,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       if (tab === 'login') {
-        const res = await login(formData.email, formData.password, formData.role);
+        const res = await login(formData.email, formData.password, 'parent');
         if (res.ok) {
           showToast(`Welcome back, ${res.user.name}!`, 'success');
           setTimeout(() => navigate(from || dashboardPath(res.user)), 800);
@@ -60,7 +65,7 @@ export default function LoginPage() {
           setErrors({ email: res.error || 'Invalid credentials' });
         }
       } else {
-        const res = await register(formData.name, formData.email, formData.password, formData.confirmPassword, formData.role);
+        const res = await register(formData.name, formData.email, formData.password, formData.confirmPassword, 'parent');
         if (res.ok) {
           showToast(`Account created, ${res.user.name}!`, 'success');
           setTimeout(() => navigate(dashboardPath(res.user)), 800);
@@ -78,67 +83,69 @@ export default function LoginPage() {
   return (
     <div className="login-grid">
       {ToastComponent}
-      
-      {/* Left Panel: Visual & Messaging */}
+
+      {/* Left Panel */}
       <div className="visual-panel">
-        <div className="animate-fadeInUp" style={{ maxWidth: 500 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 40 }}>
-             <span style={{ width: 16, height: 16, borderRadius: '50%', background: 'white', boxShadow: '0 0 15px rgba(255,255,255,0.5)' }} />
-             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', color: 'white' }}>
+        <div className="animate-fadeInUp" style={{ maxWidth: 520, position: 'relative', zIndex: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 48 }}>
+             <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem' }}>🧠</div>
+             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.8rem', color: 'white', letterSpacing: '-0.02em' }}>
                AutiSense
              </span>
           </div>
-          
-          <h1 style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1.2, marginBottom: 24, letterSpacing: '-0.02em', padding: '10px 0' }}>
-            Nurturing every <br />
-            <span style={{ opacity: 0.85 }}>milestone.</span>
+
+          <h1 style={{ fontSize: '3.5rem', fontWeight: 900, lineHeight: 1.1, marginBottom: 28, letterSpacing: '-0.03em' }}>
+            Early detection,<br />
+            <span style={{ background: 'linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.6) 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>brighter futures.</span>
           </h1>
-          
-          <p style={{ fontSize: '1.2rem', opacity: 0.9, marginBottom: 48, lineHeight: 1.6, fontWeight: 500 }}>
-            Join thousands of parents and clinicians using AI-powered insights for early autism detection and personalized support.
+
+          <p style={{ fontSize: '1.15rem', opacity: 0.8, marginBottom: 56, lineHeight: 1.7, fontWeight: 400, maxWidth: 420 }}>
+            AI-powered developmental screening that helps parents identify autism spectrum indicators earlier than ever.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {[
-              { icon: '🎯', text: '96.7% Screening Accuracy' },
-              { icon: '🤖', text: 'AI-Powered Drawing Analysis' },
-              { icon: '📈', text: 'Personalized Development Tracking' }
+              { icon: '🎯', title: '96.7% Accuracy', desc: 'Clinically validated screening' },
+              { icon: '🤖', title: 'Multimodal AI', desc: 'Drawing, video & behavioral analysis' },
+              { icon: '📊', title: 'Smart Tracking', desc: 'Longitudinal progress monitoring' }
             ].map((item, i) => (
-              <div key={i} className={`animate-fadeInUp delay-${i+2}`} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <span style={{ fontSize: '1.5rem', width: 48, height: 48, background: 'rgba(255,255,255,0.1)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div key={i} className={`animate-fadeInUp delay-${i+2}`} style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                <div style={{
+                  fontSize: '1.3rem', width: 52, height: 52,
+                  background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(8px)',
+                  borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '1px solid rgba(255,255,255,0.1)'
+                }}>
                   {item.icon}
-                </span>
-                <span style={{ fontWeight: 700, fontSize: '1rem' }}>{item.text}</span>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1rem' }}>{item.title}</div>
+                  <div style={{ fontSize: '0.85rem', opacity: 0.6, fontWeight: 500 }}>{item.desc}</div>
+                </div>
               </div>
             ))}
           </div>
-        </div>
 
-        <img 
-          src="/screening-illustration.png"
-          alt="Illustration"
-          className="animate-pulse-soft"
-          style={{
-            position: 'absolute',
-            bottom: '-5%',
-            right: '-5%',
-            width: '65%',
-            opacity: 0.25,
-            pointerEvents: 'none',
-            mixBlendMode: 'screen'
-          }}
-        />
+          <div style={{ marginTop: 64, display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex' }}>
+              {['👩', '👨', '👩‍👧', '👨‍👦'].map((a, i) => (
+                <div key={i} style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', marginLeft: i > 0 ? -8 : 0, border: '2px solid rgba(255,255,255,0.1)' }}>{a}</div>
+              ))}
+            </div>
+            <span style={{ fontSize: '0.85rem', opacity: 0.7, fontWeight: 600 }}>Trusted by 2,400+ families</span>
+          </div>
+        </div>
       </div>
 
-      {/* Right Panel: Form */}
+      {/* Right Panel */}
       <div className="form-panel">
-        <Container style={{ maxWidth: 520, padding: 0 }}>
-          <div className="animate-fadeInUp" style={{ marginBottom: 24 }}>
+        <Container style={{ maxWidth: 480, padding: 0, position: 'relative', zIndex: 2 }}>
+          <div className="animate-fadeInUp" style={{ marginBottom: 20 }}>
             <button
               onClick={() => navigate('/')}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
-                fontSize: '0.95rem', fontWeight: 700, color: 'var(--muted)',
+                fontSize: '0.9rem', fontWeight: 700, color: 'var(--muted)',
                 cursor: 'pointer', background: 'none', border: 'none', padding: '8px 0',
                 fontFamily: 'var(--font-body)', transition: 'var(--transition)'
               }}
@@ -149,80 +156,71 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <GlassCard p="48px" className="animate-fadeInUp delay-1" style={{ border: '1.5px solid white' }}>
-            <div style={{ textAlign: 'center', marginBottom: 40 }}>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', color: 'var(--dark)', letterSpacing: '-0.02em' }}>
+          <div className="animate-fadeInUp delay-1" style={{
+            background: 'white', borderRadius: 'var(--radius-lg)', padding: '36px 32px',
+            boxShadow: '0 4px 40px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+            border: '1px solid rgba(0,0,0,0.04)'
+          }}>
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--orange-pale)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.6rem', margin: '0 auto 16px' }}>
+                👨‍👩‍👧
+              </div>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.6rem', color: 'var(--dark)', letterSpacing: '-0.02em' }}>
                 {tab === 'login' ? 'Welcome Back' : 'Create Account'}
               </h2>
-              <p style={{ fontSize: '1rem', color: 'var(--muted)', marginTop: 8, fontWeight: 500 }}>
-                {tab === 'login' ? 'Enter your credentials to continue' : 'Start your journey with AutiSense today'}
+              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: 4, fontWeight: 500 }}>
+                {tab === 'login' ? 'Sign in to your parent account' : 'Register as a parent to get started'}
               </p>
             </div>
 
-            <div className="segmented-control" style={{ marginBottom: 32 }}>
-              <button className={`segment-btn ${tab === 'login' ? 'active' : ''}`} onClick={() => handleTab('login')}>Sign In</button>
-              <button className={`segment-btn ${tab === 'register' ? 'active' : ''}`} onClick={() => handleTab('register')}>Register</button>
+            {/* Tab Toggle */}
+            <div className="segmented-control" style={{ marginBottom: 24 }}>
+              <button className={`segment-btn ${tab === 'login' ? 'active' : ''}`} style={{ padding: '8px 12px' }} onClick={() => handleTab('login')}>Sign In</button>
+              <button className={`segment-btn ${tab === 'register' ? 'active' : ''}`} style={{ padding: '8px 12px' }} onClick={() => handleTab('register')}>Register</button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <label className="form-label" style={{ textAlign: 'center' }}>Logging in as</label>
-                <div className="segmented-control">
-                  {['parent', 'doctor', 'admin'].map(r => (
-                    <button 
-                      key={r}
-                      type="button" 
-                      className={`segment-btn ${formData.role === r ? 'active' : ''}`} 
-                      onClick={() => setFormData({...formData, role: r})}
-                      style={{ textTransform: 'capitalize' }}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {tab === 'register' && (
                 <Input label="Full Name" name="name" value={formData.name} onChange={handleChange} error={errors.name} placeholder="Rahul Sharma" autoComplete="name" />
               )}
-              
-              <Input label="Email Address" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} placeholder="name@email.com" autoComplete="email" />
 
+              <Input label="Email Address" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} placeholder="name@email.com" autoComplete="email" />
               <Input label="Password" name="password" type="password" value={formData.password} onChange={handleChange} error={errors.password} placeholder="••••••••" autoComplete={tab === 'login' ? 'current-password' : 'new-password'} />
-              
+
               {tab === 'register' && (
                 <Input label="Confirm Password" name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} error={errors.confirmPassword} placeholder="••••••••" autoComplete="new-password" />
               )}
 
               {tab === 'login' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: -4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--muted)', cursor: 'pointer', fontWeight: 600 }}>
                     <input type="checkbox" style={{ accentColor: 'var(--orange-solid)', cursor: 'pointer', width: 16, height: 16 }} defaultChecked /> Remember me
                   </label>
-                  <button type="button" onClick={() => showToast('Check your email for instructions.', 'info')} style={{ fontSize: '0.85rem', color: 'var(--orange-solid)', fontWeight: 800 }}>
+                  <button type="button" onClick={() => showToast('Check your email for instructions.', 'info')} style={{ fontSize: '0.85rem', color: 'var(--orange-solid)', fontWeight: 800, background: 'none', border: 'none', cursor: 'pointer' }}>
                     Forgot Password?
                   </button>
                 </div>
               )}
 
-              <Btn type="submit" size="lg" disabled={submitting} loading={submitting} style={{ marginTop: 8, width: '100%' }}>
-                {tab === 'login' ? 'Sign In Now' : 'Create My Account'}
+              <Btn type="submit" size="lg" disabled={submitting} loading={submitting} style={{ marginTop: 4, width: '100%', padding: '12px' }}>
+                {tab === 'login' ? 'Sign In →' : 'Create Account →'}
               </Btn>
             </form>
 
-            <div style={{ textAlign: 'center', marginTop: 32 }}>
-              <p style={{ fontSize: '0.95rem', color: 'var(--muted)', fontWeight: 500 }}>
-                {tab === 'login' ? "New to AutiSense?" : "Already have an account?"}
+            <div style={{ textAlign: 'center', marginTop: 20 }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 500, margin: 0 }}>
+                {tab === 'login' ? "Don't have an account?" : "Already have an account?"}
                 {' '}
-                <button 
+                <button
                   onClick={() => handleTab(tab === 'login' ? 'register' : 'login')}
-                  style={{ color: 'var(--orange-solid)', fontWeight: 800, background: 'none', border: 'none', cursor: 'pointer' }}
+                  style={{ color: 'var(--orange-solid)', fontWeight: 800, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
                 >
-                  {tab === 'login' ? 'Create one here' : 'Sign In instead'}
+                  {tab === 'login' ? 'Create one' : 'Sign In'}
                 </button>
               </p>
             </div>
-          </GlassCard>
+          </div>
         </Container>
       </div>
     </div>

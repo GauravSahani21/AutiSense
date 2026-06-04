@@ -3,8 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ScreeningProvider } from './context/ScreeningContext';
 
-import { DoctorProvider } from './context/DoctorContext';
-
 // Pages
 import LandingPage      from './pages/LandingPage';
 import LoginPage        from './pages/LoginPage';
@@ -14,14 +12,12 @@ import ChildDetailPage  from './pages/ChildDetailPage';
 import ScreeningPage    from './pages/ScreeningPage';
 import ResultPage       from './pages/ResultPage';
 import HistoryPage      from './pages/HistoryPage';
-import DoctorDashboard  from './pages/DoctorDashboard';
-import PatientDetailPage from './pages/PatientDetailPage';
 import AwarenessPage    from './pages/AwarenessPage';
-import AdminPanel       from './pages/AdminPanel';
 import NotFoundPage     from './pages/NotFoundPage';
-import UnifiedScanPage from './pages/UnifiedScanPage';
+import UnifiedScanPage  from './pages/UnifiedScanPage';
+import ProfilePage      from './pages/ProfilePage';
 
-import Navbar from './components/Navbar';
+import Navbar  from './components/Navbar';
 import Chatbot from './components/Chatbot';
 
 /* ── Protected Route ─────────────────────────────── */
@@ -30,8 +26,7 @@ function ProtectedRoute({ children, roles }) {
   const location = useLocation();
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: location }} replace />;
   if (roles && !roles.includes(user.role)) {
-    const dash = user.role === 'doctor' ? '/doctor' : user.role === 'admin' ? '/admin' : '/parent';
-    return <Navigate to={dash} replace />;
+    return <Navigate to="/parent" replace />;
   }
   return children;
 }
@@ -46,28 +41,20 @@ function AppLayout() {
         <Route path="/"          element={<LandingPage />} />
         <Route path="/login"     element={<LoginPage />} />
         <Route path="/awareness" element={<AwarenessPage />} />
-        <Route path="/visual-screening" element={<UnifiedScanPage />} />
+        <Route path="/visual-screening" element={<ProtectedRoute roles={['parent']}><UnifiedScanPage /></ProtectedRoute>} />
         <Route path="/drawing-analysis" element={<Navigate to="/visual-screening" replace />} />
-        <Route path="/face-eye-scan" element={<Navigate to="/visual-screening" replace />} />
+        <Route path="/face-eye-scan"    element={<Navigate to="/visual-screening" replace />} />
         <Route path="*"          element={<NotFoundPage />} />
 
         {/* Parent */}
         <Route path="/parent"           element={<ProtectedRoute roles={['parent']}><ParentDashboard /></ProtectedRoute>} />
+        <Route path="/profile"          element={<ProtectedRoute roles={['parent']}><ProfilePage /></ProtectedRoute>} />
         <Route path="/add-child"        element={<ProtectedRoute roles={['parent']}><AddChildPage /></ProtectedRoute>} />
         <Route path="/parent/child/:childId/details" element={<ProtectedRoute roles={['parent']}><ChildDetailPage /></ProtectedRoute>} />
         <Route path="/parent/child/:childId/edit"    element={<ProtectedRoute roles={['parent']}><ChildDetailPage /></ProtectedRoute>} />
-        <Route path="/screening"        element={<ProtectedRoute roles={['parent']}><ScreeningPage /></ProtectedRoute>} />
-        <Route path="/screening/:childId" element={<ProtectedRoute roles={['parent']}><ScreeningPage /></ProtectedRoute>} />
         <Route path="/result"           element={<ProtectedRoute roles={['parent']}><ResultPage /></ProtectedRoute>} />
         <Route path="/history"          element={<ProtectedRoute roles={['parent']}><HistoryPage /></ProtectedRoute>} />
         <Route path="/report"           element={<ProtectedRoute roles={['parent']}><HistoryPage /></ProtectedRoute>} />
-
-        {/* Doctor */}
-        <Route path="/doctor"                element={<ProtectedRoute roles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />
-        <Route path="/doctor/patient/:id"    element={<ProtectedRoute roles={['doctor']}><PatientDetailPage /></ProtectedRoute>} />
-
-        {/* Admin */}
-        <Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminPanel /></ProtectedRoute>} />
       </Routes>
       <Chatbot />
     </>
@@ -80,9 +67,7 @@ export default function App() {
     <BrowserRouter>
       <ScreeningProvider>
         <AuthProvider>
-          <DoctorProvider>
-            <AppLayout />
-          </DoctorProvider>
+          <AppLayout />
         </AuthProvider>
       </ScreeningProvider>
     </BrowserRouter>

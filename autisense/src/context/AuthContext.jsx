@@ -5,35 +5,27 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem('autisense_token'));
   const [loading, setLoading] = useState(true);
 
-  // Restore session
   useEffect(() => {
-    const fetchUser = async () => {
-      if (token) {
-        try {
-          const res = await auth.getMe(token);
-          setUser(res.data);
-        } catch (err) {
-          console.error('Failed to restore session:', err);
-          setToken(null);
-          localStorage.removeItem('autisense_token');
-        }
+    localStorage.removeItem('autisense_token');
+    const restore = async () => {
+      try {
+        const res = await auth.getMe();
+        setUser(res.data);
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
-    fetchUser();
-  }, [token]);
+    restore();
+  }, []);
 
   const login = useCallback(async (email, password, role) => {
     try {
-      // Role is not strictly needed for backend login, but we pass it anyway or ignore it
-      const res = await auth.login({ email, password });
-      
+      const res = await auth.login({ email, password, role });
       setUser(res.user);
-      setToken(res.token);
-      localStorage.setItem('autisense_token', res.token);
       return { ok: true, user: res.user };
     } catch (err) {
       return { ok: false, error: err.message || 'Login failed' };
@@ -46,41 +38,34 @@ export function AuthProvider({ children }) {
     }
     try {
       const res = await auth.register({ name, email, password, role });
-      
       setUser(res.user);
-      setToken(res.token);
-      localStorage.setItem('autisense_token', res.token);
       return { ok: true, user: res.user };
     } catch (err) {
       return { ok: false, error: err.message || 'Registration failed' };
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await auth.logout();
+    } catch {
+      /* cookie cleared server-side when reachable */
+    }
     setUser(null);
-    setToken(null);
-    localStorage.removeItem('autisense_token');
   }, []);
 
   const isAuthenticated = !!user;
 
   const dashboardPath = useCallback((u = user) => {
     if (!u) return '/login';
-    if (u.role === 'doctor') return '/doctor';
-    if (u.role === 'admin')  return '/admin';
     return '/parent';
   }, [user]);
 
   if (loading) {
     return (
       <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--cream)',
-        flexDirection: 'column',
-        gap: 16,
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--cream)', flexDirection: 'column', gap: 16,
       }}>
         <div style={{
           width: 44, height: 44,
@@ -99,7 +84,6 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user,
-      token,
       login,
       register,
       logout,

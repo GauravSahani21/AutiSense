@@ -7,7 +7,7 @@ import { children as childrenApi } from '../api';
 export default function AddChildPage() {
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
-  const { token } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const [formData, setFormData] = useState({
     name: '', dob: '', gender: 'Boy', guardian: '', photo: null
@@ -40,11 +40,12 @@ export default function AddChildPage() {
     setSaving(true);
     try {
       // Normalize display gender ('Boy'/'Girl') to DB enum ('male'/'female')
-      const payload = {
-        ...formData,
-        gender: formData.gender === 'Boy' ? 'male' : 'female'
-      };
-      await childrenApi.create(payload, token);
+      await childrenApi.create({
+        name: formData.name.trim(),
+        dob: formData.dob,
+        gender: formData.gender === 'Boy' ? 'male' : 'female',
+        guardian: formData.guardian.trim(),
+      });
       showToast(`${formData.name}'s profile added successfully!`, 'success');
       setTimeout(() => navigate('/parent'), 800);
     } catch (err) {

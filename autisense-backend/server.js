@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 import connectDB from './config/db.js';
 
 // Route files
@@ -29,11 +30,14 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Set security headers
 app.use(helmet());
+app.use(cookieParser());
 
-// Enable CORS
-app.use(cors());
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim());
+
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 // Dev logging middleware
 if (process.env.NODE_ENV === 'development') {

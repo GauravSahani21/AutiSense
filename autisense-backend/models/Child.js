@@ -76,7 +76,7 @@ ChildSchema.virtual('age').get(function() {
   if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
-  return age;
+  return Math.max(0, age);
 });
 
 export default mongoose.model('Child', ChildSchema);

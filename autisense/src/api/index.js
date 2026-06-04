@@ -1,28 +1,33 @@
-const BASE_URL = 'http://localhost:5000/api';
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
-async function apiCall(endpoint, method = 'GET', body = null, token = null) {
-  const headers = {
-    'Content-Type': 'application/json'
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
+async function apiCall(endpoint, method = 'GET', body = null) {
   const config = {
     method,
-    headers
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
   };
 
-  if (body) {
-    config.body = JSON.stringify(body);
+  if (body) config.body = JSON.stringify(body);
+
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${endpoint}`, config);
+  } catch {
+    throw new Error('Cannot reach server. Is the backend running?');
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, config);
-  const data = await response.json();
+  let data = {};
+  const text = await response.text();
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Invalid server response (${response.status})`);
+    }
+  }
 
-  if (!data.success) {
-    throw new Error(data.error || 'API request failed');
+  if (!response.ok || data.success === false) {
+    throw new Error(data.error || `API request failed (${response.status})`);
   }
 
   return data;
@@ -31,62 +36,70 @@ async function apiCall(endpoint, method = 'GET', body = null, token = null) {
 export const auth = {
   register: (data) => apiCall('/auth/register', 'POST', data),
   login: (data) => apiCall('/auth/login', 'POST', data),
-  getMe: (token) => apiCall('/auth/me', 'GET', null, token)
+  logout: () => apiCall('/auth/logout', 'POST'),
+  getMe: () => apiCall('/auth/me', 'GET'),
+  updateDetails: (data) => apiCall('/auth/updateDetails', 'PUT', data),
 };
 
 export const children = {
-  getAll: (token) => apiCall('/children', 'GET', null, token),
-  getOne: (id, token) => apiCall(`/children/${id}`, 'GET', null, token),
-  create: (data, token) => apiCall('/children', 'POST', data, token),
-  update: (id, data, token) => apiCall(`/children/${id}`, 'PUT', data, token),
-  remove: (id, token) => apiCall(`/children/${id}`, 'DELETE', null, token),
-  getScreenings: (id, token) => apiCall(`/children/${id}/screenings`, 'GET', null, token)
+  getAll: () => apiCall('/children', 'GET'),
+  getOne: (id) => apiCall(`/children/${id}`, 'GET'),
+  create: (data) => apiCall('/children', 'POST', data),
+  update: (id, data) => apiCall(`/children/${id}`, 'PUT', data),
+  remove: (id) => apiCall(`/children/${id}`, 'DELETE'),
+  getScreenings: (id) => apiCall(`/children/${id}/screenings`, 'GET'),
 };
 
 export const screenings = {
-  create: (data, token) => apiCall('/screenings', 'POST', data, token),
-  getAll: (token) => apiCall('/screenings', 'GET', null, token),
-  getOne: (id, token) => apiCall(`/screenings/${id}`, 'GET', null, token)
+  create: (data) => apiCall('/screenings', 'POST', data),
+  getAll: () => apiCall('/screenings', 'GET'),
+  getOne: (id) => apiCall(`/screenings/${id}`, 'GET'),
 };
 
 export const trajectory = {
-  getByChild: (childId, token) => apiCall(`/trajectory/${childId}`, 'GET', null, token),
-  getTrajectory: (childId, token) => apiCall(`/trajectory/${childId}`, 'GET', null, token)
+  getByChild: (childId) => apiCall(`/trajectory/${childId}`, 'GET'),
+  getTrajectory: (childId) => apiCall(`/trajectory/${childId}`, 'GET'),
 };
 
 export const interventions = {
-  generate: (childId, token) => apiCall('/interventions/generate', 'POST', { childId }, token),
-  getByChild: (childId, token) => apiCall(`/interventions/${childId}`, 'GET', null, token),
-  updateAdherence: (planId, activities, outcomeNotes, token) =>
-    apiCall(`/interventions/${planId}/adherence`, 'PUT', { activities, outcomeNotes }, token),
+  generate: (childId) => apiCall('/interventions/generate', 'POST', { childId }),
+  getByChild: (childId) => apiCall(`/interventions/${childId}`, 'GET'),
+  updateAdherence: (planId, activities, outcomeNotes) =>
+    apiCall(`/interventions/${planId}/adherence`, 'PUT', { activities, outcomeNotes }),
 };
 
 export const clinical = {
-  getNextAction: (childId, token) => apiCall(`/clinical/next-action/${childId}`, 'GET', null, token),
-  getExplainability: (screeningId, token) => apiCall(`/clinical/explainability/${screeningId}`, 'GET', null, token),
+  getNextAction: (childId) => apiCall(`/clinical/next-action/${childId}`, 'GET'),
+  getExplainability: (screeningId) => apiCall(`/clinical/explainability/${screeningId}`, 'GET'),
 };
 
 export const reports = {
-  getAll: (token) => apiCall('/reports', 'GET', null, token),
-  getOne: (screeningId, token) => apiCall(`/reports/${screeningId}`, 'GET', null, token),
-  share: (id, data, token) => apiCall(`/reports/${id}/share`, 'PUT', data, token),
-  updateAnalysis: (id, data, token) => apiCall(`/reports/${id}/analysis`, 'PUT', data, token)
+  getAll: () => apiCall('/reports', 'GET'),
+  getOne: (screeningId) => apiCall(`/reports/${screeningId}`, 'GET'),
+  share: (id, data) => apiCall(`/reports/${id}/share`, 'PUT', data),
+  updateAnalysis: (id, data) => apiCall(`/reports/${id}/analysis`, 'PUT', data),
 };
 
 export const doctor = {
-  getPatients: (token) => apiCall('/doctor/patients', 'GET', null, token),
-  getScreenings: (childId, token) => apiCall(`/doctor/patients/${childId}/screenings`, 'GET', null, token),
-  addRemarks: (id, data, token) => apiCall(`/doctor/screenings/${id}/remarks`, 'PUT', data, token),
-  markReviewed: (screeningId, token) => apiCall(`/doctor/screenings/${screeningId}/review`, 'PUT', null, token),
-  getStats: (token) => apiCall('/doctor/stats', 'GET', null, token)
+  getPatients: () => apiCall('/doctor/patients', 'GET'),
+  getScreenings: (childId) => apiCall(`/doctor/patients/${childId}/screenings`, 'GET'),
+  addRemarks: (id, data) => apiCall(`/doctor/screenings/${id}/remarks`, 'PUT', data),
+  markReviewed: (screeningId) => apiCall(`/doctor/screenings/${screeningId}/review`, 'PUT'),
+  getStats: () => apiCall('/doctor/stats', 'GET'),
 };
 
 export const admin = {
-  getUsers: (token) => apiCall('/admin/users', 'GET', null, token),
-  toggleUser: (id, token) => apiCall(`/admin/users/${id}/toggle`, 'PUT', null, token),
-  deleteUser: (id, token) => apiCall(`/admin/users/${id}`, 'DELETE', null, token),
-  getAllScreenings: (token) => apiCall('/admin/screenings', 'GET', null, token),
-  getStats: (token) => apiCall('/admin/stats', 'GET', null, token),
-  getMonthly: (token) => apiCall('/admin/monthly', 'GET', null, token),
-  getActivityLog: (token) => apiCall('/admin/activity', 'GET', null, token)
+  getUsers: () => apiCall('/admin/users', 'GET'),
+  toggleUser: (id) => apiCall(`/admin/users/${id}/toggle`, 'PUT'),
+  deleteUser: (id) => apiCall(`/admin/users/${id}`, 'DELETE'),
+  getAllScreenings: () => apiCall('/admin/screenings', 'GET'),
+  getStats: () => apiCall('/admin/stats', 'GET'),
+  getMonthly: () => apiCall('/admin/monthly', 'GET'),
+  getActivityLog: () => apiCall('/admin/activity', 'GET'),
+};
+
+export const scan = {
+  analyzeDrawing: (image) => apiCall('/scan/analyze-drawing', 'POST', { image }),
+  analyzeFaceEye: (metrics) => apiCall('/scan/analyze-face-eye', 'POST', metrics),
+  combinedReport: (payload) => apiCall('/scan/combined-report', 'POST', payload),
 };

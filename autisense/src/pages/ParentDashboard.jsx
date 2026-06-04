@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { children as childrenApi, screenings as screeningsApi, trajectory as trajectoryApi } from '../api';
 import { Container, PageWrapper, SectionHeading, StatCard, Card, Btn, Badge, ScoreBar, Modal, useToast, EmptyState, Grid } from '../components/UI';
-import RiskTrajectoryChart, { trendMeta } from '../components/RiskTrajectoryChart';
 import InterventionPlan from './InterventionPlan';
 
 export default function ParentDashboard() {
-  const { user, token } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
   
@@ -25,11 +24,11 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!token) return;
+      if (!isAuthenticated) return;
       try {
         const [childrenRes, screeningsRes] = await Promise.all([
-          childrenApi.getAll(token),
-          screeningsApi.getAll(token),
+          childrenApi.getAll(),
+          screeningsApi.getAll(),
         ]);
 
         const loadedChildren = childrenRes.data || [];
@@ -60,11 +59,11 @@ export default function ParentDashboard() {
       }
     };
     fetchDashboardData();
-  }, [token]);
+  }, [isAuthenticated]);
 
   const confirmDelete = async () => {
     try {
-      await childrenApi.remove(deleteModal._id, token);
+      await childrenApi.remove(deleteModal._id);
       setChildren(c => c.filter(x => x._id !== deleteModal._id));
       showToast(`${deleteModal.name} removed successfully.`, 'success');
       setDeleteModal(null);
@@ -85,7 +84,7 @@ export default function ParentDashboard() {
 
     try {
       setLoadingTrajectoryByChild((prev) => ({ ...prev, [childId]: true }));
-      const res = await trajectoryApi.getTrajectory(childId, token);
+      const res = await trajectoryApi.getTrajectory(childId);
       setTrajectoryByChild((prev) => ({ ...prev, [childId]: res.data }));
     } catch (err) {
       const message = err?.message || 'Failed to load risk trajectory';
@@ -157,7 +156,7 @@ export default function ParentDashboard() {
 
             {children.length === 0 ? (
               <Card premium p="60px" style={{ marginBottom: 48 }}>
-                <EmptyState icon="👶" title="No children added yet" desc="Add your child's profile to start the clinically validated M-CHAT screening process." action={<Btn onClick={() => navigate('/add-child')}>Add Child Profile</Btn>} />
+                <EmptyState icon="👶" title="No children added yet" desc="Add your child's profile to start the AI-powered developmental screening." action={<Btn onClick={() => navigate('/add-child')}>Add Child Profile</Btn>} />
               </Card>
             ) : (
               <Grid cols={2} style={{ marginBottom: 64 }}>
@@ -171,7 +170,7 @@ export default function ParentDashboard() {
 
                 <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 28 }}>
                   <div style={{ width: 84, height: 84, borderRadius: '50%', background: 'var(--orange-pale)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', border: '2px solid var(--white)', boxShadow: 'var(--shadow-sm)' }}>
-                    {c.avatar || '👶'}
+                    {(!c.avatar || c.avatar === 'default-avatar') ? '👶' : c.avatar}
                   </div>
                   <div>
                     <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--dark)' }}>{c.name}</h3>
@@ -196,65 +195,17 @@ export default function ParentDashboard() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 12 }}>
-                  <Btn variant="primary" style={{ flex: 1.5 }} onClick={() => navigate(`/screening/${c._id}`)}>Screen Now</Btn>
+                  <Btn variant="primary" style={{ flex: 1.5 }} onClick={() => navigate(`/visual-screening?childId=${c._id}`)}>AI Assessment</Btn>
                   <Btn variant="outline" style={{ flex: 1 }} onClick={() => navigate(`/report?childId=${c._id}`)}>Reports</Btn>
-                  <Btn variant="ghost" onClick={() => toggleTrajectory(c._id)}>
-                    {expandedChildId === c._id ? 'Hide Trend' : 'Trends'}
-                  </Btn>
                 </div>
-
-                {expandedChildId === c._id && (
-                  <div className="animate-fadeIn" style={{ marginTop: 24, paddingTop: 20, borderTop: '1.5px dashed var(--border)' }}>
-                    {loadingTrajectoryByChild[c._id] ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)', fontSize: '0.9rem', padding: '20px 0' }}>
-                        <Spinner size={20} />
-                        <span>Analyzing risk trajectory...</span>
-                      </div>
-                    ) : trajectoryByChild[c._id] ? (
-                      <>
-                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 900, color: 'var(--dark)' }}>
-                            Longitudinal Risk Analysis
-                          </h4>
-                          {(() => {
-                            const trend = trendMeta(trajectoryByChild[c._id]?.trend);
-                            return (
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  gap: 8,
-                                  alignItems: 'center',
-                                  padding: '6px 12px',
-                                  borderRadius: 999,
-                                  background: trend.bg,
-                                  color: trend.color,
-                                  fontSize: '0.75rem',
-                                  fontWeight: 800,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.04em'
-                                }}
-                              >
-                                <span>{trend.icon}</span>
-                                <span>{trend.label}</span>
-                              </span>
-                            );
-                          })()}
-                        </div>
-                        <RiskTrajectoryChart trajectoryData={trajectoryByChild[c._id]} height={240} />
-                      </>
-                    ) : (
-                      <p style={{ fontSize: '0.9rem', color: 'var(--muted)', textAlign: 'center', padding: '20px 0' }}>
-                        Unable to load trajectory data. Please ensure you have completed at least one screening.
-                      </p>
-                    )}
-                  </div>
-                )}
                   </Card>
                 ))}
               </Grid>
             )}
 
-            {/* History Preview */}
+            {/* History Preview — only show when there are screenings */}
+            {recentScreenings.length > 0 && (
+            <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
               <SectionHeading title="Recent Activity" subtitle="Quick overview of the latest screening results." style={{ marginBottom: 0 }} />
               <Btn variant="ghost" onClick={() => navigate('/report')}>View Full History →</Btn>
@@ -304,6 +255,8 @@ export default function ParentDashboard() {
                 </tbody>
               </table>
             </Card>
+            </>
+            )}
           </div>
         )}
 

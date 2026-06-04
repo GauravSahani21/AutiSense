@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SectionHeading, Container, Btn, Section, Grid, GlassCard } from '../components/UI';
+import { useAuth } from '../context/AuthContext';
 
 const STATS = [
   { val: '1 in 36', label: 'Children affected by autism', emoji: '👶' },
@@ -32,6 +33,15 @@ const TESTIMONIALS = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { isAuthenticated, user, dashboardPath } = useAuth();
+
+  const handleStartScreening = () => {
+    if (isAuthenticated && user) {
+      navigate(dashboardPath ? dashboardPath(user) : '/parent');
+    } else {
+      navigate('/login');
+    }
+  };
 
   return (
     <div style={{ background: 'var(--cream)', overflowX: 'hidden' }}>
@@ -95,7 +105,7 @@ export default function LandingPage() {
               </p>
 
               <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 72 }}>
-                <Btn size="lg" onClick={() => navigate('/login')} style={{ padding: '24px 56px', fontSize: '1.25rem', borderRadius: 'var(--radius-md)', boxShadow: '0 20px 40px rgba(255,107,43,0.25)' }}>
+                <Btn size="lg" onClick={handleStartScreening} style={{ padding: '24px 56px', fontSize: '1.25rem', borderRadius: 'var(--radius-md)', boxShadow: '0 20px 40px rgba(255,107,43,0.25)' }}>
                   Start Free Screening
                 </Btn>
                 <Btn size="lg" variant="ghost" onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })} 
@@ -315,7 +325,7 @@ export default function LandingPage() {
           <Btn
             variant="ghost"
             size="lg"
-            onClick={() => navigate('/login')}
+            onClick={handleStartScreening}
             style={{
               background: 'white', color: 'var(--orange-solid)',
               border: 'none', boxShadow: '0 12px 32px rgba(0,0,0,0.15)',

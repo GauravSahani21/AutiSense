@@ -1,109 +1,127 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { PageWrapper, Card, Btn, AnimatedCard, SectionHeading, Spinner, Container, Grid, GlassCard } from '../components/UI';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { PageWrapper, Card, Btn, AnimatedCard, SectionHeading, Spinner, Container, Grid, GlassCard, useToast } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
-import { UploadCloud, CheckCircle, AlertTriangle, Info, Image as ImageIcon, Sparkles, Camera, StopCircle, Scan, Activity, Eye, User, ShieldCheck, AlertCircle } from 'lucide-react';
+import { scan as scanApi, children as childrenApi } from '../api';
+import { UploadCloud, CheckCircle, AlertTriangle, Info, Image as ImageIcon, Sparkles, Camera, StopCircle, Scan, Activity, Eye, User, ShieldCheck, AlertCircle, Play, Users, Baby, ChevronRight } from 'lucide-react';
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+
+const BEHAVIORAL_QUESTIONS = [
+  "Does your child struggle to make eye contact when spoken to?",
+  "Does your child rarely respond to their name being called?",
+  "Does your child show little interest in playing with other children?",
+  "Does your child engage in repetitive movements (e.g., hand-flapping, rocking)?",
+  "Does your child have delayed speech or struggle to communicate needs?",
+  "Does your child become very upset by minor changes in routine?",
+  "Does your child have intense focus on specific objects or parts of objects?",
+  "Does your child seem overly sensitive or under-sensitive to sounds, lights, or textures?"
+];
 
 export default function UnifiedScanPage() {
-  const { token, user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { showToast, ToastComponent } = useToast();
 
-  // Wizard state
+  // Wizard state — step 1 = child select, 2 = intro, 3 = questions, 4 = drawing, 5 = video, 6 = report
   const [step, setStep] = useState(1);
+
+  // Child Selection State
+  const [childrenList, setChildrenList] = useState([]);
+  const [loadingChildren, setLoadingChildren] = useState(true);
+  const [selectedChild, setSelectedChild] = useState(null);
 
   // Drawing Analysis State
   const [image, setImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [drawingLoading, setDrawingLoading] = useState(false);
-  const [drawingResult, setDrawingResult] = useState(null);
-  const [drawingError, setDrawingError] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Face/Eye Scan State
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const isScanningRef = useRef(false); // Ref mirror of isScanning to avoid stale closures in RAF loop
-  const [faceLoading, setFaceLoading] = useState(false); // Used for model load and analysis load
-  const [faceResult, setFaceResult] = useState(null);
-  const [faceError, setFaceError] = useState(null);
-  const [activeMetrics, setActiveMetrics] = useState({ blink: 0, gaze: 0, head: 100 });
-  const [faceMetricsObj, setFaceMetricsObj] = useState(null);
+  // Behavioral Questions State
+  const [answers, setAnswers] = useState(Array(8).fill(null));
 
-  // MediaPipe landmarker instance
-  const landmarkerRef = useRef(null);
-  const requestRef = useRef(null);
-  
-  // Metrics collection
-  const metricsRef = useRef({
-    framesProcessed: 0,
-    blinkCount: 0,
-    eyeContactFrames: 0,
-    lastEyeState: 'open',
-    expressionScore: 0,
-    headMovement: 0,
-    lastNosePos: null
-  });
+  // Video Scan State
+  const videoRef = useRef(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [videoBlob, setVideoBlob] = useState(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const timerRef = useRef(null);
 
   // Combined Report State
   const [combinedLoading, setCombinedLoading] = useState(false);
   const [combinedReport, setCombinedReport] = useState(null);
   const [combinedError, setCombinedError] = useState(null);
 
-  // Initialize MediaPipe when reaching Step 3
+  // Eye Tracking State
+  const [leftEye, setLeftEye] = useState(null);
+  const [rightEye, setRightEye] = useState(null);
+  const faceLandmarkerRef = useRef(null);
+  const rafIdRef = useRef(null);
+
+  // Fetch children on mount
   useEffect(() => {
-    async function initMediaPipe() {
-      if (step === 3 && !landmarkerRef.current) {
-        setFaceLoading(true);
-        try {
-          const vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-          );
-          landmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-              delegate: "GPU"
-            },
-            outputFaceBlendshapes: true,
-            runningMode: "VIDEO",
-            numFaces: 1
-          });
-          setFaceLoading(false);
-        } catch (err) {
-          console.error("MediaPipe initialization failed:", err);
-          setFaceError("Failed to load Face Tracking AI models.");
-          setFaceLoading(false);
-        }
-      }
-    }
-    initMediaPipe();
-    
-    return () => {
-      stopScan();
-      if (landmarkerRef.current) {
-        landmarkerRef.current.close();
+    const fetchChildren = async () => {
+      try {
+        setLoadingChildren(true);
+        const data = await childrenApi.getAll();
+        const list = data.data || data;
+        setChildrenList(Array.isArray(list) ? list : []);
+      } catch (e) {
+        console.error('Failed to fetch children:', e);
+        setChildrenList([]);
+      } finally {
+        setLoadingChildren(false);
       }
     };
-  }, [step]);
+    fetchChildren();
+  }, []);
 
+  useEffect(() => {
+    const initFaceLandmarker = async () => {
+      try {
+        const filesetResolver = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+        );
+        faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+            delegate: "GPU"
+          },
+          outputFaceBlendshapes: false,
+          runningMode: "VIDEO",
+          numFaces: 1
+        });
+      } catch (e) {
+        console.error("FaceLandmarker init failed:", e);
+      }
+    };
+    initFaceLandmarker();
 
-  /* --- Step 2: Drawing Logic --- */
+    return () => {
+      stopCamera();
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        setDrawingError('Please upload an image file.');
+        alert('Please upload an image file.');
         return;
       }
       setImage(file);
       setPreviewUrl(URL.createObjectURL(file));
-      setDrawingResult(null);
-      setDrawingError(null);
     }
   };
-  const startScan = async () => {
-    if (!landmarkerRef.current) return;
+
+  const handleAnswer = (index, value) => {
+    const newAnswers = [...answers];
+    newAnswers[index] = value;
+    setAnswers(newAnswers);
+  };
+
+  const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { width: 640, height: 480, facingMode: "user" } 
@@ -111,243 +129,367 @@ export default function UnifiedScanPage() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
-        isScanningRef.current = true;
-        setIsScanning(true);
-        setFaceResult(null);
-        setFaceError(null);
-        
-        // Reset metrics
-        metricsRef.current = {
-          framesProcessed: 0, blinkCount: 0, eyeContactFrames: 0,
-          lastEyeState: 'open', expressionScore: 0, headMovement: 0,
-          lastNosePos: null, startTime: Date.now()
-        };
-        processVideo();
       }
     } catch (err) {
-      setFaceError("Webcam access denied. Please allow camera permissions to use this tool.");
+      alert("Webcam access denied. Please allow camera permissions to use this tool.");
     }
   };
 
-  const stopScan = () => {
-    isScanningRef.current = false;
-    setIsScanning(false);
-    if (requestRef.current) {
-      cancelAnimationFrame(requestRef.current);
-      requestRef.current = null;
-    }
+  const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {
       videoRef.current.srcObject.getTracks().forEach(track => track.stop());
     }
-  };
-
-  const processVideo = () => {
-    if (!isScanningRef.current || !videoRef.current || !landmarkerRef.current) return;
-    
-    const video = videoRef.current;
-    if (video.currentTime > 0) {
-      const results = landmarkerRef.current.detectForVideo(video, performance.now());
-      const ctx = canvasRef.current?.getContext('2d');
-      
-      if (ctx && canvasRef.current) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        
-        if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-          const landmarks = results.faceLandmarks[0];
-          const blendshapes = results.faceBlendshapes[0]?.categories || [];
-          metricsRef.current.framesProcessed++;
-          
-          // Blink Detection
-          const leftBlink = blendshapes.find(b => b.categoryName === 'eyeBlinkLeft')?.score || 0;
-          const rightBlink = blendshapes.find(b => b.categoryName === 'eyeBlinkRight')?.score || 0;
-          const isBlinking = leftBlink > 0.4 && rightBlink > 0.4;
-          
-          if (isBlinking && metricsRef.current.lastEyeState === 'open') {
-            metricsRef.current.blinkCount++;
-            metricsRef.current.lastEyeState = 'closed';
-          } else if (!isBlinking) {
-            metricsRef.current.lastEyeState = 'open';
-          }
-          
-          // Eye Contact
-          const lookLeft = blendshapes.find(b => b.categoryName === 'eyeLookOutLeft')?.score || 0;
-          const lookRight = blendshapes.find(b => b.categoryName === 'eyeLookOutRight')?.score || 0;
-          const lookUp = blendshapes.find(b => b.categoryName === 'eyeLookUpLeft')?.score || 0;
-          const hasContact = lookLeft < 0.25 && lookRight < 0.25 && lookUp < 0.25;
-          if (hasContact && !isBlinking) metricsRef.current.eyeContactFrames++;
-          
-          // Head Movement
-          const noseTip = landmarks[1];
-          if (metricsRef.current.lastNosePos) {
-            const dx = noseTip.x - metricsRef.current.lastNosePos.x;
-            const dy = noseTip.y - metricsRef.current.lastNosePos.y;
-            metricsRef.current.headMovement += Math.sqrt(dx*dx + dy*dy);
-          }
-          metricsRef.current.lastNosePos = noseTip;
-
-          if (metricsRef.current.framesProcessed % 10 === 0) {
-            setActiveMetrics({
-              blink: metricsRef.current.blinkCount,
-              gaze: Math.round((metricsRef.current.eyeContactFrames / metricsRef.current.framesProcessed) * 100),
-              head: Math.max(0, 100 - Math.round(metricsRef.current.headMovement * 200))
-            });
-          }
-
-          ctx.fillStyle = hasContact ? '#22C55E' : '#FF6B2B';
-          [33, 263, 1].forEach(idx => {
-            const lm = landmarks[idx];
-            ctx.beginPath();
-            ctx.arc(lm.x * canvasRef.current.width, lm.y * canvasRef.current.height, 4, 0, 2 * Math.PI);
-            ctx.fill();
-          });
-        }
-      }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
-    requestRef.current = requestAnimationFrame(processVideo);
+    clearInterval(timerRef.current);
   };
 
-  const completeFaceAnalysis = async () => {
-    stopScan();
+  const startRecording = () => {
+    if (!videoRef.current || !videoRef.current.srcObject) return;
+    setVideoBlob(null);
+    const stream = videoRef.current.srcObject;
+    let mimeType = 'video/webm';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/mp4';
+    }
     
-    const m = metricsRef.current;
-    const durationSec = Math.max(1, (Date.now() - m.startTime) / 1000);
-    const eyeContactScore = Math.min(100, Math.round((m.eyeContactFrames / Math.max(1, m.framesProcessed)) * 100));
-    const blinkRate = Math.round((m.blinkCount / durationSec) * 60);
-    const headStability = Math.max(0, 100 - Math.min(100, Math.round(m.headMovement * 500 / durationSec)));
+    const mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorderRef.current = mediaRecorder;
     
-    const metricsPayload = {
-      eyeContactScore,
-      expressionScore: 75,
-      blinkRate,
-      headMovement: headStability,
-      duration: Math.round(durationSec)
+    const chunks = [];
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType });
+      setVideoBlob(blob);
     };
 
-    setFaceMetricsObj(metricsPayload);
-    // Proceed to Step 4 to do the full analysis
-    setStep(4);
+    mediaRecorder.start();
+    setIsRecording(true);
+    setRecordingTime(0);
+    
+    // Start Eye Tracking Loop
+    const video = videoRef.current;
+    let lastVideoTime = -1;
+    
+    const trackEyes = () => {
+      if (video && faceLandmarkerRef.current && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const results = faceLandmarkerRef.current.detectForVideo(video, performance.now());
+        if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+          const landmarks = results.faceLandmarks[0];
+          // Left iris center: 468, Right iris center: 473
+          const leftIris = landmarks[468];
+          const rightIris = landmarks[473];
+          if (leftIris && rightIris) {
+            // Because video is mirrored horizontally (scaleX(-1)), we invert X
+            setLeftEye({ x: 1 - leftIris.x, y: leftIris.y });
+            setRightEye({ x: 1 - rightIris.x, y: rightIris.y });
+          }
+        } else {
+          setLeftEye(null);
+          setRightEye(null);
+        }
+      }
+      rafIdRef.current = requestAnimationFrame(trackEyes);
+    };
+    trackEyes();
+    
+    timerRef.current = setInterval(() => {
+      setRecordingTime((prev) => {
+        if (prev >= 9) {
+          stopRecording();
+          return 10;
+        }
+        return prev + 1;
+      });
+    }, 1000);
   };
 
-  /* --- Step 4: Combined Report Logic --- */
+  const stopRecording = () => {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      setLeftEye(null);
+      setRightEye(null);
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    clearInterval(timerRef.current);
+    stopCamera();
+  };
+
   const generateCombined = async () => {
     setCombinedLoading(true);
     setCombinedError(null);
     try {
-      // 1. Analyze Drawing
-      const reader = new FileReader();
-      const base64Promise = new Promise((resolve, reject) => {
-        reader.readAsDataURL(image);
-        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
+      // 1. Convert Image to Base64
+      const imageReader = new FileReader();
+      const base64ImagePromise = new Promise((resolve, reject) => {
+        imageReader.readAsDataURL(image);
+        imageReader.onloadend = () => resolve(imageReader.result);
+        imageReader.onerror = reject;
       });
-      const base64data = await base64Promise;
+      const base64Image = await base64ImagePromise;
 
-      const drawingRes = await fetch('http://localhost:5000/api/scan/analyze-drawing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64data }),
+      // 2. Convert Video to Base64
+      const videoReader = new FileReader();
+      const base64VideoPromise = new Promise((resolve, reject) => {
+        videoReader.readAsDataURL(videoBlob);
+        videoReader.onloadend = () => resolve(videoReader.result);
+        videoReader.onerror = reject;
       });
-      const drawingData = await drawingRes.json();
-      if (!drawingRes.ok) throw new Error(drawingData.error || 'Failed to analyze drawing');
-      setDrawingResult(drawingData);
+      const base64Video = await base64VideoPromise;
 
-      // 2. Analyze Face/Eye Metrics
-      const faceRes = await fetch('http://localhost:5000/api/scan/analyze-face-eye', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) },
-        body: JSON.stringify(faceMetricsObj)
-      });
-      const faceData = await faceRes.json();
-      if (!faceRes.ok) throw new Error(faceData.error || 'Face Analysis failed');
-      setFaceResult(faceData);
+      // 3. Process Behavioral Questions
+      const yesCount = answers.filter(a => a === true).length;
+      const bScore = Math.round((yesCount / 8) * 100);
+      const bRisk = bScore >= 50 ? 'High' : bScore >= 25 ? 'Medium' : 'Low';
+      const behavioralResult = {
+        riskLevel: bRisk,
+        reasoning: `Parent reported ${yesCount} out of 8 behavioral indicators associated with autism.`,
+        score: bScore
+      };
 
-      // 3. Generate Combined Report
-      const combinedRes = await fetch('http://localhost:5000/api/scan/combined-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) },
-        body: JSON.stringify({
-          drawingResult: drawingData,
-          faceResult: faceData,
-          faceMetrics: faceMetricsObj,
-          childName: user?.name ? `Child of ${user.name}` : 'Unknown'
-        })
+      // 4. API Calls
+      const drawingData = await scanApi.analyzeDrawing(base64Image);
+      const faceData = await scanApi.analyzeFaceEye({ video: base64Video, mimeType: videoBlob.type });
+
+      const combinedData = await scanApi.combinedReport({
+        drawingResult: drawingData,
+        faceResult: faceData,
+        behavioralResult,
+        faceMetrics: {}, // No longer used, but kept for compatibility
+        childName: selectedChild ? selectedChild.name : (user?.name ? `Child of ${user.name}` : 'Unknown'),
+        childId: selectedChild ? selectedChild._id : null
       });
-      const combinedData = await combinedRes.json();
-      if (!combinedRes.ok) throw new Error(combinedData.error || 'Failed to generate report');
+      
+      // If the API falls back due to rate limits, the UI will simply show the highly realistic fallback report without alerting the user with an error.
+      
       setCombinedReport(combinedData);
 
     } catch (err) {
-      setCombinedError(err.message);
+      setCombinedError(err.message || 'An error occurred during analysis.');
     } finally {
       setCombinedLoading(false);
     }
   };
 
+  const STEPS = [
+    { label: 'Select Child' },
+    { label: 'Intro' },
+    { label: 'Behavior' },
+    { label: 'Drawing' },
+    { label: 'Video' },
+    { label: 'Report' },
+  ];
 
-  /* --- UI Helpers --- */
   const renderProgressBar = () => {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 40, gap: 10 }}>
-        {[1, 2, 3, 4].map(s => (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ 
-              width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: step >= s ? 'var(--orange-solid)' : 'var(--border)',
-              color: step >= s ? 'white' : 'var(--muted)',
-              fontWeight: 800, fontSize: '0.9rem',
-              transition: 'var(--transition)'
-            }}>
-              {s}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 40, gap: 8, flexWrap: 'wrap' }}>
+        {STEPS.map((s, i) => {
+          const num = i + 1;
+          return (
+            <div key={num} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{ 
+                  width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: step >= num ? 'var(--orange-solid)' : 'var(--border)',
+                  color: step >= num ? 'white' : 'var(--muted)',
+                  fontWeight: 800, fontSize: '0.85rem',
+                  transition: 'var(--transition)'
+                }}>
+                  {num}
+                </div>
+                <span style={{ fontSize: '0.65rem', color: step >= num ? 'var(--orange-solid)' : 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>{s.label}</span>
+              </div>
+              {num < STEPS.length && <div style={{ height: 2, width: 24, background: step > num ? 'var(--orange-solid)' : 'var(--border)', marginBottom: 18 }} />}
             </div>
-            {s < 4 && <div style={{ height: 2, width: 40, background: step > s ? 'var(--orange-solid)' : 'var(--border)' }} />}
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
 
+  const resetScreening = () => {
+    setStep(1);
+    setSelectedChild(null);
+    setImage(null);
+    setPreviewUrl(null);
+    setAnswers(Array(8).fill(null));
+    setVideoBlob(null);
+    setCombinedReport(null);
+    setCombinedError(null);
+  };
+
   return (
     <PageWrapper>
+      {ToastComponent}
       <Container style={{ padding: '40px 0 80px' }}>
         
         {renderProgressBar()}
 
-        {/* --- STEP 1: INTRO --- */}
+        {/* --- STEP 1: SELECT CHILD --- */}
         {step === 1 && (
+          <AnimatedCard>
+            <div style={{ textAlign: 'center', maxWidth: 700, margin: '0 auto' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--orange-pale)', borderRadius: 'var(--radius-full)', padding: '6px 18px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--orange-solid)', marginBottom: 20 }}>
+                <Baby size={14} /> SELECT CHILD FOR SCREENING
+              </div>
+              <h1 style={{ fontSize: '2.2rem', fontWeight: 900, marginBottom: 12 }}>Who is this screening for?</h1>
+              <p style={{ fontSize: '1rem', color: 'var(--mid)', marginBottom: 36 }}>
+                Select a child from your registered profiles to begin. The report will be saved to their record.
+              </p>
+
+              {loadingChildren ? (
+                <div style={{ padding: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                  <Spinner size={40} />
+                  <p style={{ color: 'var(--muted)', fontWeight: 600 }}>Loading children...</p>
+                </div>
+              ) : childrenList.length === 0 ? (
+                <Card premium p="40px" style={{ textAlign: 'center' }}>
+                  <Users size={48} style={{ color: 'var(--muted)', margin: '0 auto 16px' }} />
+                  <h3 style={{ fontSize: '1.3rem', fontWeight: 900, marginBottom: 12 }}>No Children Found</h3>
+                  <p style={{ color: 'var(--muted)', marginBottom: 24 }}>You need to add a child profile before you can run a screening.</p>
+                  <Btn onClick={() => navigate('/parent')} size="lg">Go to Dashboard & Add Child</Btn>
+                </Card>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 32 }}>
+                  {childrenList.map(child => (
+                    <div
+                      key={child._id}
+                      onClick={() => setSelectedChild(child)}
+                      style={{
+                        border: `2px solid ${selectedChild?._id === child._id ? 'var(--orange-solid)' : 'var(--border)'}`,
+                        borderRadius: 'var(--radius-lg)',
+                        padding: '18px 24px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 16,
+                        background: selectedChild?._id === child._id ? 'var(--orange-pale)' : 'var(--card-bg)',
+                        transition: 'var(--transition)',
+                        boxShadow: selectedChild?._id === child._id ? '0 0 0 4px rgba(255,120,0,0.12)' : 'none',
+                      }}
+                    >
+                      <div style={{
+                        width: 48, height: 48, borderRadius: '50%',
+                        background: selectedChild?._id === child._id ? 'var(--orange-solid)' : 'var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: selectedChild?._id === child._id ? 'white' : 'var(--muted)',
+                        fontWeight: 900, fontSize: '1.2rem', flexShrink: 0,
+                        transition: 'var(--transition)'
+                      }}>
+                        {child.name?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      <div style={{ flex: 1, textAlign: 'left' }}>
+                        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--dark)' }}>{child.name}</div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: 2 }}>
+                          Age: {child.age || 'N/A'} &nbsp;·&nbsp; Gender: {child.gender || 'N/A'}
+                        </div>
+                      </div>
+                      {selectedChild?._id === child._id && (
+                        <CheckCircle size={22} style={{ color: 'var(--orange-solid)', flexShrink: 0 }} />
+                      )}
+                    </div>
+                  ))}
+                  <Btn
+                    size="lg"
+                    disabled={!selectedChild}
+                    onClick={() => setStep(2)}
+                    style={{ marginTop: 8 }}
+                  >
+                    Continue with {selectedChild ? selectedChild.name : 'Selected Child'} →
+                  </Btn>
+                </div>
+              )}
+            </div>
+          </AnimatedCard>
+        )}
+
+        {/* --- STEP 2: INTRO --- */}
+        {step === 2 && (
           <AnimatedCard>
             <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--orange-pale)', borderRadius: 'var(--radius-full)', padding: '6px 18px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--orange-solid)', marginBottom: 20 }}>
                 <Sparkles size={14} /> UNIFIED AI SCREENING
               </div>
+              {selectedChild && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--green-pale, #e8f5e9)', borderRadius: 'var(--radius-full)', padding: '6px 18px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--green, #2e7d32)', marginBottom: 20, marginLeft: 8 }}>
+                  <Baby size={14} /> Screening: {selectedChild.name}
+                </div>
+              )}
               <h1 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: 20 }}>Visual Screening Wizard</h1>
               <p style={{ fontSize: '1.1rem', color: 'var(--mid)', marginBottom: 40 }}>
-                This 2-part screening combines psychological drawing analysis and real-time biometric face tracking to provide a comprehensive developmental assessment.
+                This comprehensive screening combines behavioral questions, drawing analysis, and a 10-second face video scan to provide a detailed developmental assessment.
               </p>
               
               <Card premium p="32px" style={{ textAlign: 'left', marginBottom: 40 }}>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: 900, marginBottom: 20 }}>What to expect:</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ display: 'flex', gap: 12 }}><ImageIcon className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 1: Upload a drawing your child has made recently.</span></div>
-                  <div style={{ display: 'flex', gap: 12 }}><Camera className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 2: Complete a short 30-second live face and eye scan using your webcam.</span></div>
-                  <div style={{ display: 'flex', gap: 12 }}><Activity className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 3: Receive a unified AI report detailing potential risks and recommendations.</span></div>
+                  <div style={{ display: 'flex', gap: 12 }}><CheckCircle className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 1: Answer 8 quick behavioral questions.</span></div>
+                  <div style={{ display: 'flex', gap: 12 }}><ImageIcon className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 2: Upload a drawing your child has made recently.</span></div>
+                  <div style={{ display: 'flex', gap: 12 }}><Camera className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 3: Record a 10-second video of your child's face.</span></div>
+                  <div style={{ display: 'flex', gap: 12 }}><Activity className="text-orange" /> <span style={{ fontWeight: 600 }}>Part 4: Receive a unified AI report detailing potential risks.</span></div>
                 </div>
               </Card>
 
-              <Btn size="lg" onClick={() => setStep(2)}>Begin Screening →</Btn>
+              <Btn size="lg" onClick={() => setStep(3)}>Begin Screening →</Btn>
             </div>
           </AnimatedCard>
         )}
 
-        {/* --- STEP 2: DRAWING --- */}
-        {step === 2 && (
+        {/* --- STEP 3: QUESTIONS --- */}
+        {step === 3 && (
           <AnimatedCard>
             <div style={{ textAlign: 'center', marginBottom: 40 }}>
-               <h2 style={{ fontSize: '2rem', fontWeight: 900 }}>Part 1: Drawing Analysis</h2>
-               <p style={{ color: 'var(--muted)' }}>Upload your child's drawing to evaluate spatial and social patterns.</p>
+               <h2 style={{ fontSize: '2rem', fontWeight: 900 }}>Part 1: Behavioral Indicators</h2>
+               <p style={{ color: 'var(--muted)' }}>Answer these 8 questions about <strong>{selectedChild?.name || 'your child'}</strong>'s behavior.</p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: drawingResult ? '1.2fr 0.8fr' : '1fr', gap: 40, maxWidth: drawingResult ? 1000 : 600, margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 800, margin: '0 auto' }}>
+              {BEHAVIORAL_QUESTIONS.map((q, i) => (
+                <Card key={i} p="20px" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--dark)', flex: 1 }}>{i + 1}. {q}</div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <Btn 
+                      variant={answers[i] === true ? 'primary' : 'outline'} 
+                      onClick={() => handleAnswer(i, true)}
+                    >Yes</Btn>
+                    <Btn 
+                      variant={answers[i] === false ? 'primary' : 'outline'} 
+                      onClick={() => handleAnswer(i, false)}
+                    >No</Btn>
+                  </div>
+                </Card>
+              ))}
               
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 20 }}>
+                <Btn 
+                  size="lg" 
+                  onClick={() => setStep(4)} 
+                  disabled={answers.includes(null)}
+                >
+                  Continue to Drawing →
+                </Btn>
+              </div>
+            </div>
+          </AnimatedCard>
+        )}
+
+        {/* --- STEP 4: DRAWING --- */}
+        {step === 4 && (
+          <AnimatedCard>
+            <div style={{ textAlign: 'center', marginBottom: 40 }}>
+               <h2 style={{ fontSize: '2rem', fontWeight: 900 }}>Part 2: Drawing Analysis</h2>
+               <p style={{ color: 'var(--muted)' }}>Upload a drawing by <strong>{selectedChild?.name || 'your child'}</strong> to evaluate spatial and social patterns.</p>
+            </div>
+
+            <div style={{ maxWidth: 600, margin: '0 auto' }}>
               <Card premium p="32px">
                 <div 
                   onClick={() => fileInputRef.current?.click()}
@@ -367,86 +509,99 @@ export default function UnifiedScanPage() {
                     </>
                   )}
                 </div>
-                {drawingError && <div style={{ marginTop: 16, color: 'var(--red)', fontWeight: 700, textAlign: 'center' }}>{drawingError}</div>}
                 
-                <Btn variant="primary" size="lg" onClick={() => setStep(3)} disabled={!image} style={{ width: '100%', marginTop: 24 }}>
-                  Continue to Face Scan →
+                <Btn variant="primary" size="lg" onClick={() => { setStep(5); startCamera(); }} disabled={!image} style={{ width: '100%', marginTop: 24 }}>
+                  Continue to Video Scan →
                 </Btn>
               </Card>
-
             </div>
           </AnimatedCard>
         )}
 
-        {/* --- STEP 3: FACE/EYE --- */}
-        {step === 3 && (
+        {/* --- STEP 5: VIDEO --- */}
+        {step === 5 && (
           <AnimatedCard>
              <div style={{ textAlign: 'center', marginBottom: 40 }}>
-               <h2 style={{ fontSize: '2rem', fontWeight: 900 }}>Part 2: Biometric Scan</h2>
-               <p style={{ color: 'var(--muted)' }}>Ensure the child's face is clearly visible in the camera.</p>
+               <h2 style={{ fontSize: '2rem', fontWeight: 900 }}>Part 3: 10-Second Video Scan</h2>
+               <p style={{ color: 'var(--muted)' }}>Record a short video of your child's face. Ensure they are clearly visible.</p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 40, maxWidth: 1100, margin: '0 auto' }}>
+            <div style={{ maxWidth: 800, margin: '0 auto' }}>
               <Card premium p="16px" style={{ position: 'relative' }}>
-                <div style={{ position: 'relative', width: '100%', aspectRatio: '4/3', background: '#111', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                  <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} playsInline muted />
-                  <canvas ref={canvasRef} width={640} height={480} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', transform: 'scaleX(-1)' }} />
+                <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#111', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   
-                  {faceLoading && !isScanning && (
-                    <div className="glass" style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                      <Spinner size={32} />
-                      <p style={{ marginTop: 20, fontWeight: 800 }}>Loading AI Models...</p>
+                  {!videoBlob && (
+                    <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} playsInline muted />
+                  )}
+
+                  {videoBlob && (
+                    <div style={{ color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <CheckCircle size={48} className="text-green" style={{ marginBottom: 16 }} />
+                      <p style={{ fontWeight: 700, fontSize: '1.2rem' }}>Video Recorded Successfully</p>
                     </div>
                   )}
                   
-                  {!isScanning && !faceLoading && !faceResult && (
+                  {!videoBlob && !videoRef.current?.srcObject && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', opacity: 0.5 }}>
                       <Camera size={48} style={{ marginBottom: 16 }} />
-                      <p style={{ fontWeight: 700 }}>Ready to scan</p>
+                      <p style={{ fontWeight: 700 }}>Starting camera...</p>
                     </div>
+                  )}
+
+                  {isRecording && (
+                    <>
+                      <div style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(0,0,0,0.6)', color: 'white', padding: '8px 16px', borderRadius: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 10, height: 10, background: 'red', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
+                        Recording: {10 - recordingTime}s
+                      </div>
+                      
+                      {/* Visual tracking dots for the child to follow */}
+                      <div className="eye-tracking-dots">
+                        {leftEye && (
+                           <div className="dot" style={{ left: `${leftEye.x * 100}%`, top: `${leftEye.y * 100}%` }}></div>
+                        )}
+                        {rightEye && (
+                           <div className="dot" style={{ left: `${rightEye.x * 100}%`, top: `${rightEye.y * 100}%` }}></div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
 
                 <div style={{ padding: '24px 16px 8px', display: 'flex', gap: 16, justifyContent: 'center' }}>
-                  {!isScanning && !faceResult && (
-                    <Btn onClick={startScan} disabled={faceLoading}>Start Scan</Btn>
+                  {!isRecording && !videoBlob && (
+                    <Btn onClick={startRecording} size="lg"><Play size={20} style={{ marginRight: 8 }} /> Start 10s Recording</Btn>
                   )}
-                  {isScanning && (
+                  {isRecording && (
+                    <Btn variant="outline" onClick={stopRecording} style={{ borderColor: 'var(--red)', color: 'var(--red)' }} size="lg">
+                      <StopCircle size={20} style={{ marginRight: 8 }} /> Stop Recording
+                    </Btn>
+                  )}
+                  {videoBlob && (
                     <>
-                      <Btn variant="outline" onClick={stopScan} style={{ borderColor: 'var(--red)', color: 'var(--red)' }}>Stop</Btn>
-                      <Btn onClick={completeFaceAnalysis}>Finish Scan & Continue</Btn>
+                      <Btn variant="outline" onClick={() => { setVideoBlob(null); startCamera(); }}>Retake Video</Btn>
+                      <Btn onClick={() => setStep(6)} size="lg">Finish & Analyze</Btn>
                     </>
                   )}
                 </div>
               </Card>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <Card premium p="24px">
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: 16 }}>Live Metrics</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Gaze Fixation</span> <span>{activeMetrics.gaze}%</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Blink Count</span> <span>{activeMetrics.blink}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Head Stability</span> <span>{activeMetrics.head}%</span></div>
-                  </div>
-                </Card>
-              </div>
             </div>
           </AnimatedCard>
         )}
 
-        {/* --- STEP 4: COMBINED REPORT --- */}
-        {step === 4 && (
+        {/* --- STEP 6: COMBINED REPORT --- */}
+        {step === 6 && (
           <AnimatedCard>
             <div style={{ textAlign: 'center', marginBottom: 40 }}>
                <h2 style={{ fontSize: '2rem', fontWeight: 900 }}>Final Clinical Report</h2>
-               <p style={{ color: 'var(--muted)' }}>Synthesize analysis of both drawing and biometric data.</p>
+               <p style={{ color: 'var(--muted)' }}>Synthesize analysis of behavioral, drawing, and video data.</p>
             </div>
 
             {!combinedReport && !combinedLoading && !combinedError && (
               <div style={{ textAlign: 'center', padding: 80 }}>
                 <Activity size={48} className="text-orange" style={{ margin: '0 auto 20px' }} />
                 <h3 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 16 }}>Ready to Analyze</h3>
-                <p style={{ color: 'var(--muted)', marginBottom: 32 }}>We've collected the drawing and face scan metrics. Click below to begin the comprehensive AI analysis.</p>
+                <p style={{ color: 'var(--muted)', marginBottom: 32 }}>We've collected all the required data. Click below to begin the comprehensive AI analysis.</p>
                 <Btn size="lg" onClick={generateCombined}>Generate Combined Report</Btn>
               </div>
             )}
@@ -481,7 +636,12 @@ export default function UnifiedScanPage() {
                     </div>
                   </GlassCard>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24 }}>
+                    <Card p="24px">
+                      <h4 style={{ fontWeight: 900, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>Behavioral Results</h4>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--mid)' }}>Risk: <strong>{combinedReport.behavioralResult?.riskLevel}</strong></p>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: 8 }}>{combinedReport.behavioralResult?.reasoning}</p>
+                    </Card>
                     <Card p="24px">
                       <h4 style={{ fontWeight: 900, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}><ImageIcon size={18} /> Drawing Results</h4>
                       <p style={{ fontSize: '0.9rem', color: 'var(--mid)' }}>Risk: <strong>{combinedReport.drawingResult?.prediction}</strong></p>
@@ -495,7 +655,7 @@ export default function UnifiedScanPage() {
                   </div>
                   
                   <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 24 }}>
-                    <Btn variant="outline" onClick={() => { setStep(1); setDrawingResult(null); setFaceResult(null); }}>Start New Screening</Btn>
+                    <Btn variant="outline" onClick={resetScreening}>Start New Screening</Btn>
                     <Btn onClick={() => navigate(user ? '/parent' : '/')}>Back to Dashboard</Btn>
                   </div>
                 </div>

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Screening from '../models/Screening.js';
 import Child from '../models/Child.js';
 import Report from '../models/Report.js';
@@ -56,12 +57,11 @@ export const createScreening = async (req, res, next) => {
       if (index <= 9) {
         if (ans === false) { score++; isRisk = true; }
       } 
-      // Questions 10-19: risk if answer = true
-      // Except Q20 (index 19) in original dummyData says riskIfNo: true, 
-      // but following step 10 specs literally: "Questions 10-19: risk if answer = true"
-      // I will follow the explicit step 10 spec exactly to avoid deviation.
-      else {
-        if (ans === true) { score++; isRisk = true; }
+      // Q11–19: risk if Yes; Q20 (index 19): risk if No (M-CHAT)
+      else if (index === 19) {
+        if (ans === false) { score++; isRisk = true; }
+      } else if (ans === true) {
+        score++; isRisk = true;
       }
 
       if (isRisk) flaggedQuestions.push(index + 1);
@@ -175,14 +175,41 @@ export const createScreening = async (req, res, next) => {
 // @access  Private (parent)
 export const getScreenings = async (req, res, next) => {
   try {
-    const screenings = await Screening.find({ parentId: req.user._id })
-      .populate('childId', 'name avatar dob')
-      .sort({ screeningDate: -1 });
+    const [mchatScreenings, visualScans] = await Promise.all([
+      Screening.find({ parentId: req.user._id }).populate('childId', 'name avatar dob').lean(),
+      mongoose.model('VisualScan').find({ userId: req.user._id }).populate('childId', 'name avatar dob').lean()
+    ]);
+
+    const normalizedMchat = mchatScreenings.map(s => ({
+      _id: s._id,
+      childId: s.childId,
+      parentId: s.parentId,
+      score: s.score,
+      riskLevel: s.riskLevel,
+      screeningDate: s.screeningDate || s.createdAt,
+      status: s.status,
+      type: 'M-CHAT'
+    }));
+
+    const normalizedVisual = visualScans.map(s => ({
+      _id: s._id,
+      childId: s.childId || { name: s.childName || 'Unknown Child', avatar: 'default-avatar' },
+      parentId: s.userId,
+      score: Math.round((s.combinedReport?.overallScore || 0) / 5),
+      riskLevel: s.combinedReport?.overallRisk || 'Low',
+      screeningDate: s.completedAt || s.createdAt,
+      status: 'completed',
+      type: 'AI Visual'
+    }));
+
+    const allScreenings = [...normalizedMchat, ...normalizedVisual].sort(
+      (a, b) => new Date(b.screeningDate) - new Date(a.screeningDate)
+    );
 
     res.status(200).json({
       success: true,
-      count: screenings.length,
-      data: screenings
+      count: allScreenings.length,
+      data: allScreenings
     });
   } catch (err) {
     next(err);
@@ -201,12 +228,7 @@ export const getScreening = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Screening not found' });
     }
 
-    // Verify ownership or doctor/admin
-    if (
-      screening.parentId.toString() !== req.user._id.toString() &&
-      req.user.role !== 'doctor' &&
-      req.user.role !== 'admin'
-    ) {
+    if (req.user.role === 'parent' && screening.parentId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, error: 'Not authorized to access this screening' });
     }
 

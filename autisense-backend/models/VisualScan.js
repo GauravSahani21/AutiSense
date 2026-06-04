@@ -17,6 +17,11 @@ const VisualScanSchema = new mongoose.Schema({
     ref: 'User',
     default: null
   },
+  childId: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Child',
+    default: null
+  },
   childName: {
     type: String,
     default: 'Unknown'
@@ -38,6 +43,12 @@ const VisualScanSchema = new mongoose.Schema({
       headStability:   { type: Number, min: 0, max: 100 },
       durationSeconds: { type: Number, min: 0 }
     }
+  },
+  // Behavioral questions results
+  behavioralResult: {
+    riskLevel:  { type: String, enum: ['High', 'Medium', 'Low', 'Unknown'], default: 'Unknown' },
+    reasoning:  { type: String },
+    score:      { type: Number, min: 0, max: 100 }
   },
   // Combined AI report
   combinedReport: {

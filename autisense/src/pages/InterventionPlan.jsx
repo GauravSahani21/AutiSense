@@ -55,7 +55,7 @@ function ProgressRing({ percent = 0 }) {
 }
 
 export default function InterventionPlan({ childId }) {
-  const { token } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { showToast, ToastComponent } = useToast();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,10 +80,10 @@ export default function InterventionPlan({ childId }) {
   }, [latestPlan]);
 
   const fetchPlans = async () => {
-    if (!token || !childId) return;
+    if (!isAuthenticated || !childId) return;
     try {
       setLoading(true);
-      const res = await interventionsApi.getByChild(childId, token);
+      const res = await interventionsApi.getByChild(childId);
       setPlans(res.data || []);
       setTips([]);
     } finally {
@@ -93,18 +93,20 @@ export default function InterventionPlan({ childId }) {
 
   useEffect(() => {
     fetchPlans();
-  }, [token, childId]);
+  }, [isAuthenticated, childId]);
 
   const handleGenerate = async () => {
-    if (!token || !childId) return;
+    if (!isAuthenticated || !childId) return;
     try {
       setBusyGenerate(true);
-      const res = await interventionsApi.generate(childId, token);
+      const res = await interventionsApi.generate(childId);
       const created = res.data;
       setTips(created?.tips || []);
       // Prepend created plan to list without refetch
       setPlans((prev) => [created, ...prev]);
       showToast(`Generated Week ${created?.weekNumber || ''} plan.`, 'success');
+    } catch (err) {
+      showToast(err?.message || 'Failed to generate plan', 'error');
     } finally {
       setBusyGenerate(false);
     }
@@ -120,11 +122,11 @@ export default function InterventionPlan({ childId }) {
   };
 
   const saveAdherence = async () => {
-    if (!token || !latestPlan) return;
+    if (!isAuthenticated || !latestPlan) return;
     try {
       setBusySave(true);
       const patches = latestPlan.activities.map((a, idx) => ({ index: idx, done: !!a.done }));
-      const res = await interventionsApi.updateAdherence(latestPlan._id, patches, latestPlan.outcomeNotes || '', token);
+      const res = await interventionsApi.updateAdherence(latestPlan._id, patches, latestPlan.outcomeNotes || '');
       setPlans((prev) => [res.data, ...prev.slice(1)]);
       showToast('Saved progress.', 'success');
     } finally {

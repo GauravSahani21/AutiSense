@@ -4,13 +4,15 @@ import { PageWrapper, Card, Btn, Select } from '../components/UI';
 import { MCHAT_QUESTIONS } from '../data/dummyData';
 import { useScreening } from '../context/ScreeningContext';
 import { children as childrenApi, screenings as screeningsApi, interventions as interventionsApi } from '../api';
+import { predictAutism } from '../services/api';
+import { normalizeCategories, mchatScoreFromAnswers } from '../utils/screeningHelpers';
 import { useAuth } from '../context/AuthContext';
 
 export default function ScreeningPage() {
   const { childId } = useParams();
   const navigate = useNavigate();
   const { setResult } = useScreening();
-  const { token } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const [step, setStep] = useState(0); // 0=pre, 1-5=questions, 6=analyzing
   const [selectedChildId, setSelectedChildId] = useState(childId || '');
@@ -24,7 +26,7 @@ export default function ScreeningPage() {
   useEffect(() => {
     const fetchChildren = async () => {
       try {
-        const res = await childrenApi.getAll(token);
+        const res = await childrenApi.getAll();
         const childrenList = res.data || [];
         setChildren(childrenList);
         
@@ -40,8 +42,8 @@ export default function ScreeningPage() {
         setLoading(false);
       }
     };
-    if (token) fetchChildren();
-  }, [token, childId]);
+    if (isAuthenticated) fetchChildren();
+  }, [isAuthenticated, childId]);
 
   const selectedChild = children.find(c => c._id === selectedChildId) || children[0];
 
@@ -67,50 +69,60 @@ export default function ScreeningPage() {
     const booleanAnswers = buildBooleanAnswerArray();
     const answerArray = buildMlAnswerArray();
 
-    // Calculate score for the ML prediction field
-    const score = answerArray.reduce((sum, a, i) =>
-      sum + ((i < 10 && a === 0) || (i >= 10 && a === 1) ? 1 : 0), 0);
+    const score = mchatScoreFromAnswers(answerArray);
     const risk  = score <= 6 ? 'Low' : score <= 13 ? 'Medium' : 'High';
-    const probability = Math.round((score / 20) * 100);
+
+    let mlResult = null;
+    let offline = false;
+    try {
+      const childAge = selectedChild?.age ?? (
+        selectedChild?.dob
+          ? Math.max(1, new Date().getFullYear() - new Date(selectedChild.dob).getFullYear())
+          : 3
+      );
+      const gender = String(selectedChild?.gender || 'male').toLowerCase().startsWith('f') ? 'f' : 'm';
+      mlResult = await predictAutism(answerArray, {
+        name: selectedChild?.name || 'Child',
+        age: childAge,
+        gender,
+      });
+    } catch {
+      offline = true;
+    }
+
+    const probability = mlResult?.probability ?? Math.round((score / 20) * 100);
+    const mlPrediction = {
+      prediction: mlResult?.prediction ?? (risk !== 'Low' ? 1 : 0),
+      probability,
+    };
 
     try {
       const res = await screeningsApi.create({
         childId: selectedChildId,
         answers: booleanAnswers,
-        score,
-        riskLevel: risk,
-        probability,
-        recommendations: [],
-        status: 'pending',
-        date: new Date().toISOString(),
-        mlPrediction: {
-          prediction: risk !== 'Low' ? 1 : 0,
-          probability
-        }
-      }, token);
+        mlPrediction,
+      });
 
-      // Auto-generate weekly intervention plan
-      interventionsApi.generate(selectedChildId, token).catch(() => {});
+      interventionsApi.generate(selectedChildId).catch(() => {});
 
       const { screening, report } = res.data;
+      const categories = mlResult?.categories
+        ?? normalizeCategories(report?.categoryBreakdown, answerArray);
 
       setResult({
-        child:       selectedChild,
-        answers:     booleanAnswers,
+        child: selectedChild,
+        answers: booleanAnswers,
         screened_at: screening.screeningDate || new Date().toISOString(),
-        prediction:  risk !== 'Low' ? 1 : 0,
+        prediction: mlPrediction.prediction,
         probability,
-        risk: screening.riskLevel,
-        score: screening.score,
-        total:       20,
-        categories: report.categoryBreakdown || {
-          Social:        parseFloat((answerArray.slice(0, 4).filter(a => a === 0).length / 4).toFixed(2)),
-          Communication: parseFloat((answerArray.slice(4, 8).filter(a => a === 0).length / 4).toFixed(2)),
-          Behavior:      parseFloat(([...answerArray.slice(8,10).map(a=>1-a), ...answerArray.slice(10,12)].reduce((s,v)=>s+v,0) / 4).toFixed(2)),
-          Sensory:       parseFloat((answerArray.slice(12, 16).reduce((s, v) => s + v, 0) / 4).toFixed(2)),
-          Routine:       parseFloat(([...answerArray.slice(16,19), 1 - answerArray[19]].reduce((s,v)=>s+v,0) / 4).toFixed(2)),
-        },
-        flagged: report.flaggedConcerns || [],
+        risk: mlResult?.risk ?? screening.riskLevel,
+        score: mlResult?.score ?? screening.score,
+        total: 20,
+        categories,
+        flagged: mlResult?.flagged?.length
+          ? mlResult.flagged
+          : (report.flaggedConcerns || []),
+        _offline: offline,
       });
       navigate('/result');
     } catch (saveErr) {
