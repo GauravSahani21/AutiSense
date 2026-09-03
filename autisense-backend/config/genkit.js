@@ -1,3 +1,12 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config();
+
 const NVIDIA_MODEL = 'meta/llama-3.2-11b-vision-instruct';
 const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1/chat/completions';
 

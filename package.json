@@ -1,0 +1,9 @@
+{
+  "name": "autisense-fullstack",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "pip3 install -r backend/requirements.txt && npm install --prefix autisense && npm run build --prefix autisense && npm install --prefix autisense-backend",
+    "start": "sh start.sh"
+  }
+}

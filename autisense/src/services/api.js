@@ -4,7 +4,7 @@
 // Flask routes: POST /predict  |  GET /health
 // ──────────────────────────────────────────────
 
-const API_BASE = 'http://localhost:5001';
+const API_BASE = import.meta.env.VITE_ML_API_URL || '/api/ml';
 
 /**
  * Send 20 yes/no answers + child info to the Flask ML model.

@@ -1,0 +1,10 @@
+.git
+.gitignore
+.DS_Store
+*.log
+**/node_modules
+**/.env
+**/venv
+**/__pycache__
+**/dist
+autisense-backend/.genkit
