@@ -160,7 +160,13 @@ export default function ParentDashboard() {
               </Card>
             ) : (
               <Grid cols={2} style={{ marginBottom: 64 }}>
-                {children.map((c, i) => (
+                {children.map((c, i) => {
+                  const childScreening = allScreenings.find(s => (s.childId?._id || s.childId) === c._id);
+                  const displayDate = c.lastScreen || childScreening?.screeningDate || childScreening?.createdAt;
+                  const displayScore = typeof c.score === 'number' && c.score > 0 ? c.score : (childScreening?.score ?? c.score ?? 0);
+                  const displayRisk = c.risk || childScreening?.riskLevel || 'Low';
+
+                  return (
                   <Card key={c._id} premium p="32px" className={`animate-fadeInUp delay-${i+1}`} style={{ position: 'relative' }}>
                 {/* Actions */}
                 <div style={{ position: 'absolute', top: 20, right: 20, display: 'flex', gap: 8 }}>
@@ -185,12 +191,12 @@ export default function ParentDashboard() {
                 <div style={{ background: 'var(--cream)', borderRadius: 'var(--radius-sm)', padding: 20, marginBottom: 28, border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Latest Screening</span>
-                    <Badge risk={c.risk || 'Low'} />
+                    <Badge risk={displayRisk} />
                   </div>
-                  <ScoreBar score={c.score || 0} total={c.total || 20} risk={c.risk || 'Low'} height={12} />
+                  <ScoreBar score={displayScore} total={c.total || 20} risk={displayRisk} height={12} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600 }}>{c.lastScreen ? new Date(c.lastScreen).toLocaleDateString('en-GB') : 'No screenings yet'}</span>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--dark)', fontWeight: 900 }}>Score: {c.score || 0} / {c.total || 20}</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600 }}>{displayDate ? new Date(displayDate).toLocaleDateString('en-GB') : 'No screenings yet'}</span>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--dark)', fontWeight: 900 }}>Score: {displayScore} / {c.total || 20}</span>
                   </div>
                 </div>
 
@@ -199,7 +205,8 @@ export default function ParentDashboard() {
                   <Btn variant="outline" style={{ flex: 1 }} onClick={() => navigate(`/report?childId=${c._id}`)}>Reports</Btn>
                 </div>
                   </Card>
-                ))}
+                );
+              })}
               </Grid>
             )}
 

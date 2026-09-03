@@ -2,7 +2,7 @@
 # AutiSense — Full Project Startup Script
 # Launches all 3 services in separate Terminal windows
 
-PROJECT_DIR="/Users/gauravsahani/Desktop/Al based system for Early detection of autism in preschool children"
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "🚀 Starting AutiSense project..."
 

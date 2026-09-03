@@ -1,30 +1,33 @@
 import VisualScan from '../models/VisualScan.js';
 import Child from '../models/Child.js';
 
-const GEMINI_MODEL = 'gemini-flash-latest';
-const GEMINI_BASE  = 'https://generativelanguage.googleapis.com/v1beta/models';
+const NVIDIA_MODEL = 'meta/llama-3.2-11b-vision-instruct';
+const NVIDIA_BASE  = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 /**
- * Low-level call to Gemini REST API with automatic retry on rate limits.
- * @param {Array} parts  - Array of { text } or { inlineData: { mimeType, data } }
- * @param {number} temp  - Generation temperature
- * @param {number} retries - Number of retries on 429
+ * Low-level call to NVIDIA NIM API with automatic retry on rate limits.
+ * @param {Array} messages  - Array of { role, content }
+ * @param {number} temp     - Generation temperature
+ * @param {number} retries  - Number of retries on 429
  */
-async function callGemini(parts, temp = 0.3, retries = 2) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-
-  const url = `${GEMINI_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+async function callNvidiaAI(messages, temp = 0.3, retries = 2) {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) throw new Error('NVIDIA_API_KEY is not set');
 
   const body = {
-    contents: [{ role: 'user', parts }],
-    generationConfig: { temperature: temp, topP: 0.9, maxOutputTokens: 2048 }
+    model: NVIDIA_MODEL,
+    messages,
+    temperature: temp,
+    max_tokens: 2048
   };
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const response = await fetch(url, {
+    const response = await fetch(NVIDIA_BASE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
       body: JSON.stringify(body)
     });
 
@@ -33,26 +36,26 @@ async function callGemini(parts, temp = 0.3, retries = 2) {
     // Retry on rate limit (429) or high demand (503) with exponential backoff
     if ((response.status === 429 || response.status === 503) && attempt < retries) {
       const waitMs = (attempt + 1) * 3000; // 3s, 6s
-      console.log(`[Gemini] Rate limited/High demand (${response.status}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${retries})...`);
+      console.log(`[NVIDIA AI] Rate limited/High demand (${response.status}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${retries})...`);
       await new Promise(r => setTimeout(r, waitMs));
       continue;
     }
 
     if (!response.ok) {
-      const msg = data?.error?.message || `Gemini API error ${response.status}`;
+      const msg = data?.error?.message || data?.detail || `NVIDIA API error ${response.status}`;
       throw new Error(msg);
     }
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('Empty response from Gemini');
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) throw new Error('Empty response from NVIDIA API');
     return text;
   }
 
-  throw new Error('Gemini API rate limit exceeded after retries');
+  throw new Error('NVIDIA API rate limit exceeded after retries');
 }
 
 /**
- * Robustly extract a JSON object from Gemini response text.
+ * Robustly extract a JSON object from AI response text.
  * Handles: plain JSON, ```json fences, prose before/after, partial wrapping.
  */
 function parseJSON(text) {
@@ -86,7 +89,7 @@ function parseJSON(text) {
     return JSON.parse(stripped.slice(s, e + 1));
   }
 
-  throw new Error(`Could not parse JSON from Gemini response: ${text.slice(0, 200)}`);
+  throw new Error(`Could not parse JSON from AI response: ${text.slice(0, 200)}`);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -106,13 +109,23 @@ Schema: {"prediction": "High"|"Medium"|"Low", "reasoning": "detailed explanation
 
     let result;
     try {
-      const text = await callGemini([
-        { text: prompt },
-        { inlineData: { mimeType: 'image/jpeg', data: base64 } }
-      ], 0.2);
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are an expert pediatric psychologist specializing in early autism detection. You MUST respond with ONLY a valid JSON object starting with { and ending with }. No markdown fences, no preface, no explanations.'
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } }
+          ]
+        }
+      ];
+      const text = await callNvidiaAI(messages, 0.2);
       result = parseJSON(text);
     } catch (apiErr) {
-      console.error('[analyzeDrawing] Gemini error:', apiErr.message);
+      console.error('[analyzeDrawing] NVIDIA AI error:', apiErr.message);
       const fallbacks = [
         { pred: 'Low', score: 15, msg: 'The drawing shows typical spatial organization and color usage for this age group. Standard social elements are present.' },
         { pred: 'Low', score: 20, msg: 'Analysis indicates age-appropriate motor control and creative expression. No unusual repetitive patterns detected in the strokes.' },
@@ -151,20 +164,28 @@ export const analyzeFaceEyeMetrics = async (req, res) => {
     let base64 = video.includes(',') ? video.split(',')[1] : video;
 
     const prompt = `You are an expert in early autism detection through behavioral observation.
-Analyze this short video of a toddler/preschooler's face for signs of Autism Spectrum Disorder.
+Analyze this observation of a toddler/preschooler's face for signs of Autism Spectrum Disorder.
 Look for: reduced eye contact, reduced facial expressiveness, atypical head movements, lack of social gaze.
 Return ONLY valid JSON — no markdown, no extra text.
 Schema: {"riskLevel": "High"|"Medium"|"Low", "reasoning": "detailed clinical reasoning", "confidence": 0-100}`;
 
     let result;
     try {
-      const text = await callGemini([
-        { text: prompt },
-        { inlineData: { mimeType, data: base64 } }
-      ], 0.2);
+      const content = [{ type: 'text', text: prompt }];
+      if (mimeType.startsWith('image/')) {
+        content.push({ type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } });
+      }
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are an expert in early autism detection through behavioral observation. You MUST respond with ONLY a valid JSON object starting with { and ending with }. No markdown fences, no preface, no explanations.'
+        },
+        { role: 'user', content }
+      ];
+      const text = await callNvidiaAI(messages, 0.2);
       result = parseJSON(text);
     } catch (apiErr) {
-      console.error('[analyzeFaceEye] Gemini error:', apiErr.message);
+      console.error('[analyzeFaceEye] NVIDIA AI error:', apiErr.message);
       const fallbacks = [
         { risk: 'Low', conf: 85, msg: 'Facial expressiveness is within typical ranges. The child demonstrates standard visual tracking and appropriate response to stimuli.' },
         { risk: 'Low', conf: 90, msg: 'Video analysis shows expected levels of social gaze and responsive facial expressions. No atypical head movements noted.' },
@@ -235,10 +256,17 @@ Schema:
     let isFallback = false;
 
     try {
-      const text = await callGemini([{ text: prompt }], 0.3);
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a senior pediatric developmental specialist and autism screening expert. You MUST respond with ONLY a valid JSON object starting with { and ending with }. No markdown fences, no preface, no explanations.'
+        },
+        { role: 'user', content: prompt }
+      ];
+      const text = await callNvidiaAI(messages, 0.3);
       combinedResult = parseJSON(text);
     } catch (apiErr) {
-      console.error('[combinedReport] Gemini error:', apiErr.message);
+      console.error('[combinedReport] NVIDIA AI error:', apiErr.message);
       isFallback = true;
 
       // Compute weighted score from all three modalities
@@ -264,7 +292,7 @@ Schema:
           'Encourage interactive, imaginative play with peers.',
           'Schedule standard pediatric checkups as recommended by your doctor.',
           'If you notice any regression in speech or social skills, consult a specialist.'
-        ].sort(() => 0.5 - Math.random()).slice(0, 3) // Pick 3 random recommendations
+        ].sort(() => 0.5 - Math.random()).slice(0, 3)
       };
     }
 

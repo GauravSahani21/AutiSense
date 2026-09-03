@@ -175,10 +175,93 @@ export default function LoginPage() {
             </div>
 
             {/* Tab Toggle */}
-            <div className="segmented-control" style={{ marginBottom: 24 }}>
+            <div className="segmented-control" style={{ marginBottom: 18 }}>
               <button className={`segment-btn ${tab === 'login' ? 'active' : ''}`} style={{ padding: '8px 12px' }} onClick={() => handleTab('login')}>Sign In</button>
               <button className={`segment-btn ${tab === 'register' ? 'active' : ''}`} style={{ padding: '8px 12px' }} onClick={() => handleTab('register')}>Register</button>
             </div>
+
+            {/* Quick Demo Login Credentials */}
+            {tab === 'login' && (
+              <div style={{
+                background: 'var(--cream)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 14px',
+                marginBottom: 18,
+                border: '1px solid var(--border)'
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>⚡ Quick Demo Fill:</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, email: 'priya@gmail.com', password: 'Parent@123' }));
+                      setErrors({});
+                    }}
+                    style={{
+                      background: 'white',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '6px 8px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: 'var(--dark)',
+                      cursor: 'pointer',
+                      transition: 'var(--transition)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--orange-solid)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                  >
+                    👨‍👩‍👧 Parent
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, email: 'doctor1@hospital.com', password: 'Doctor@123' }));
+                      setErrors({});
+                    }}
+                    style={{
+                      background: 'white',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '6px 8px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: 'var(--dark)',
+                      cursor: 'pointer',
+                      transition: 'var(--transition)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--orange-solid)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                  >
+                    👨‍⚕️ Doctor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, email: 'admin@autisense.com', password: 'Admin@123' }));
+                      setErrors({});
+                    }}
+                    style={{
+                      background: 'white',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '6px 8px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: 'var(--dark)',
+                      cursor: 'pointer',
+                      transition: 'var(--transition)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--orange-solid)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                  >
+                    🛡️ Admin
+                  </button>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {tab === 'register' && (

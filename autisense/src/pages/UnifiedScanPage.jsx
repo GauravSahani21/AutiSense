@@ -55,6 +55,7 @@ export default function UnifiedScanPage() {
   // Eye Tracking State
   const [leftEye, setLeftEye] = useState(null);
   const [rightEye, setRightEye] = useState(null);
+  const [cameraError, setCameraError] = useState(false);
   const faceLandmarkerRef = useRef(null);
   const rafIdRef = useRef(null);
 
@@ -121,8 +122,102 @@ export default function UnifiedScanPage() {
     setAnswers(newAnswers);
   };
 
+  const loadSampleDrawing = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 450;
+    const ctx = canvas.getContext('2d');
+
+    // Canvas background
+    ctx.fillStyle = '#FFFDF9';
+    ctx.fillRect(0, 0, 600, 450);
+
+    // Warm Sun
+    ctx.fillStyle = '#FFAA00';
+    ctx.beginPath();
+    ctx.arc(100, 90, 42, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sun rays
+    ctx.strokeStyle = '#FFAA00';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i * Math.PI) / 4;
+      ctx.beginPath();
+      ctx.moveTo(100 + Math.cos(angle) * 50, 90 + Math.sin(angle) * 50);
+      ctx.lineTo(100 + Math.cos(angle) * 70, 90 + Math.sin(angle) * 70);
+      ctx.stroke();
+    }
+
+    // Grass Hill
+    ctx.fillStyle = '#78C850';
+    ctx.beginPath();
+    ctx.ellipse(300, 460, 380, 130, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // House
+    ctx.fillStyle = '#FF6B6B';
+    ctx.fillRect(280, 220, 190, 150);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#333333';
+    ctx.strokeRect(280, 220, 190, 150);
+
+    // Roof
+    ctx.fillStyle = '#4D96FF';
+    ctx.beginPath();
+    ctx.moveTo(260, 220);
+    ctx.lineTo(375, 135);
+    ctx.lineTo(490, 220);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Door & Window
+    ctx.fillStyle = '#6BCB77';
+    ctx.fillRect(345, 290, 55, 80);
+    ctx.strokeRect(345, 290, 55, 80);
+    ctx.fillStyle = '#FFF';
+    ctx.fillRect(415, 245, 40, 40);
+    ctx.strokeRect(415, 245, 40, 40);
+
+    // Child stick figure
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#333333';
+    ctx.beginPath();
+    ctx.arc(150, 275, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(150, 295);
+    ctx.lineTo(150, 355);
+    ctx.moveTo(150, 315);
+    ctx.lineTo(120, 335);
+    ctx.moveTo(150, 315);
+    ctx.lineTo(180, 335);
+    ctx.moveTo(150, 355);
+    ctx.lineTo(130, 400);
+    ctx.moveTo(150, 355);
+    ctx.lineTo(170, 400);
+    ctx.stroke();
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], 'child-sample-drawing.png', { type: 'image/png' });
+        setImage(file);
+        setPreviewUrl(URL.createObjectURL(file));
+      }
+    }, 'image/png');
+  };
+
+  const useSampleObservation = () => {
+    const sampleBlob = new Blob(['sample_observation_data'], { type: 'video/webm' });
+    setVideoBlob(sampleBlob);
+    setIsRecording(false);
+    stopCamera();
+  };
+
   const startCamera = async () => {
     try {
+      setCameraError(false);
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { width: 640, height: 480, facingMode: "user" } 
       });
@@ -131,7 +226,8 @@ export default function UnifiedScanPage() {
         videoRef.current.play();
       }
     } catch (err) {
-      alert("Webcam access denied. Please allow camera permissions to use this tool.");
+      setCameraError(true);
+      console.warn("Webcam access unavailable:", err.message);
     }
   };
 
@@ -509,6 +605,51 @@ export default function UnifiedScanPage() {
                     </>
                   )}
                 </div>
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={loadSampleDrawing}
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1.5px dashed var(--orange-solid)',
+                      background: 'white',
+                      color: 'var(--orange-solid)',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      transition: 'var(--transition)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--orange-pale)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                  >
+                    🎨 Load Sample Child Drawing
+                  </button>
+                  {image && (
+                    <button
+                      type="button"
+                      onClick={() => { setImage(null); setPreviewUrl(null); }}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--cream)',
+                        color: 'var(--muted)',
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
                 
                 <Btn variant="primary" size="lg" onClick={() => { setStep(5); startCamera(); }} disabled={!image} style={{ width: '100%', marginTop: 24 }}>
                   Continue to Video Scan →
@@ -537,7 +678,7 @@ export default function UnifiedScanPage() {
                   {videoBlob && (
                     <div style={{ color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                       <CheckCircle size={48} className="text-green" style={{ marginBottom: 16 }} />
-                      <p style={{ fontWeight: 700, fontSize: '1.2rem' }}>Video Recorded Successfully</p>
+                      <p style={{ fontWeight: 700, fontSize: '1.2rem' }}>Video Observation Ready</p>
                     </div>
                   )}
                   
@@ -568,9 +709,30 @@ export default function UnifiedScanPage() {
                   )}
                 </div>
 
-                <div style={{ padding: '24px 16px 8px', display: 'flex', gap: 16, justifyContent: 'center' }}>
+                {cameraError && !videoBlob && (
+                  <div style={{
+                    background: 'var(--orange-pale)',
+                    border: '1px solid var(--orange-light)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '12px 16px',
+                    marginTop: 14,
+                    textAlign: 'center'
+                  }}>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--dark)', fontWeight: 600, margin: '0 0 8px' }}>
+                      Webcam is unavailable or blocked in this browser.
+                    </p>
+                    <Btn size="sm" onClick={useSampleObservation}>
+                      📹 Use Sample Observation Clip Instead
+                    </Btn>
+                  </div>
+                )}
+
+                <div style={{ padding: '24px 16px 8px', display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
                   {!isRecording && !videoBlob && (
-                    <Btn onClick={startRecording} size="lg"><Play size={20} style={{ marginRight: 8 }} /> Start 10s Recording</Btn>
+                    <>
+                      <Btn onClick={startRecording} size="lg"><Play size={20} style={{ marginRight: 8 }} /> Start 10s Recording</Btn>
+                      <Btn variant="outline" size="lg" onClick={useSampleObservation}>📹 Use Sample Clip</Btn>
+                    </>
                   )}
                   {isRecording && (
                     <Btn variant="outline" onClick={stopRecording} style={{ borderColor: 'var(--red)', color: 'var(--red)' }} size="lg">
@@ -580,7 +742,7 @@ export default function UnifiedScanPage() {
                   {videoBlob && (
                     <>
                       <Btn variant="outline" onClick={() => { setVideoBlob(null); startCamera(); }}>Retake Video</Btn>
-                      <Btn onClick={() => setStep(6)} size="lg">Finish & Analyze</Btn>
+                      <Btn onClick={() => setStep(6)} size="lg">Finish & Analyze →</Btn>
                     </>
                   )}
                 </div>

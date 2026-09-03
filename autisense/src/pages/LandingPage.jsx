@@ -314,7 +314,7 @@ export default function LandingPage() {
       </Section>
 
       {/* ── CTA BANNER ────────────────────────────────── */}
-      <section style={{ padding: '100px 0', background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-deep) 100%)' }}>
+      <section style={{ padding: '100px 0', background: 'linear-gradient(135deg, var(--orange-solid) 0%, var(--orange-deep) 100%)' }}>
         <Container style={{ textAlign: 'center' }}>
           <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2.8rem', color: 'white', marginBottom: 18, letterSpacing: '-0.02em' }}>
             Start Your Child's Screening Today
