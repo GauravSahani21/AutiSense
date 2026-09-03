@@ -61,8 +61,10 @@ UserSchema.pre('save', async function (next) {
 
 // Sign JWT and return
 UserSchema.methods.getSignedJwtToken = function () {
-  return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE
+  const secret = process.env.JWT_SECRET || 'autisense_super_secret_jwt_key_2024';
+  const expire = process.env.JWT_EXPIRE || '7d';
+  return jwt.sign({ id: this._id }, secret, {
+    expiresIn: expire
   });
 };
 
